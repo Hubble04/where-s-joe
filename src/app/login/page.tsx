@@ -13,11 +13,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function submit() {
+  async function submit() {
     setError(null);
     if (!email.trim()) { setError('Enter your email.'); return; }
-    const res = signIn(email.trim(), password);
+    setBusy(true);
+    const res = await signIn(email.trim(), password);
+    setBusy(false);
     if (res.ok) router.push('/'); else setError(res.error ?? 'Could not sign in.');
   }
 
@@ -45,7 +48,7 @@ export default function LoginPage() {
         </div>
 
         {error && <p className="mb-3 font-mono text-xs text-red-700">{error}</p>}
-        <Button className="w-full" size="lg" onClick={submit}>Log in</Button>
+        <Button className="w-full" size="lg" onClick={submit} disabled={busy}>{busy ? 'Logging in…' : 'Log in'}</Button>
 
         <p className="mt-5 text-center font-mono text-sm text-coffee/60">
           New here? <Link href="/signup" className="text-racing-600">Create an account</Link>

@@ -1,22 +1,27 @@
 'use client';
 import { useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { isDemoMode } from '@/lib/env';
+import { isDemoMode, hasSupabase } from '@/lib/env';
+import { getSupabaseBrowser } from '@/lib/supabase/client';
+import { useStore } from '@/lib/store';
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB
 
+type Bucket = 'avatars' | 'post-photos' | 'cafe-images';
+
 /**
  * Uploads photos. In demo mode (no Supabase) it produces local object URLs so
- * the flow works visually. With Supabase configured you'd swap the upload step
- * for a storage upload — the component contract stays the same.
+ * the flow works visually. With Supabase configured, files are uploaded to
+ * the given storage bucket and the component returns their public URLs.
  */
 export function PhotoUpload({
-  value, onChange, multiple = true, max = 6, label = 'Add photos',
-}: { value: string[]; onChange: (urls: string[]) => void; multiple?: boolean; max?: number; label?: string }) {
+  value, onChange, multiple = true, max = 6, label = 'Add photos', bucket = 'post-photos',
+}: { value: string[]; onChange: (urls: string[]) => void; multiple?: boolean; max?: number; label?: string; bucket?: Bucket }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { me } = useStore();
 
   async function handle(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -27,10 +32,24 @@ export function PhotoUpload({
       if (f.size > MAX_BYTES) { setError('Each image must be under 5 MB.'); return; }
     }
     setBusy(true);
-    const urls = await Promise.all(picked.map((f) => new Promise<string>((res) => {
-      const url = URL.createObjectURL(f);
-      setTimeout(() => res(url), 250);
-    })));
+    let urls: string[];
+    if (hasSupabase) {
+      const supabase = getSupabaseBrowser()!;
+      const uploaded = await Promise.all(picked.map(async (f) => {
+        const ext = f.name.split('.').pop() || 'jpg';
+        const path = `${me?.id ?? 'anon'}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error: upErr } = await supabase.storage.from(bucket).upload(path, f, { cacheControl: '3600', upsert: false });
+        if (upErr) return null;
+        return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+      }));
+      urls = uploaded.filter((u): u is string => !!u);
+      if (urls.length < picked.length) setError('Some photos failed to upload. Please try again.');
+    } else {
+      urls = await Promise.all(picked.map((f) => new Promise<string>((res) => {
+        const url = URL.createObjectURL(f);
+        setTimeout(() => res(url), 250);
+      })));
+    }
     setBusy(false);
     const next = multiple ? [...value, ...urls].slice(0, max) : urls.slice(0, 1);
     onChange(next);

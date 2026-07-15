@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
+import { isDemoMode } from '@/lib/env';
 import { SectionTitle, EmptyState, Chip } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { timeAgo } from '@/lib/utils';
@@ -18,12 +19,15 @@ export default function AdminPage() {
       <div className="px-4 py-10">
         <div className="rounded-card border border-amber/30 bg-amber/5 p-5 text-center">
           <h1 className="font-display text-2xl text-racing-700">Admin only</h1>
-          <p className="mt-2 text-sm text-coffee/70">
-            This dashboard is limited to admins. In the demo, sign in with the email <span className="font-mono text-racing-700">joe@wheresjoe.app</span> to enter as Joe (the seeded admin).
-          </p>
-          <p className="mt-2 font-mono text-[0.7rem] text-coffee/50">
-            With Supabase connected, set a profile&rsquo;s role to <span className="text-racing-700">admin</span> in the database to grant access.
-          </p>
+          {isDemoMode ? (
+            <p className="mt-2 text-sm text-coffee/70">
+              This dashboard is limited to admins. In the demo, sign in with the email <span className="font-mono text-racing-700">joe@wheresjoe.app</span> to enter as Joe (the seeded admin).
+            </p>
+          ) : (
+            <p className="mt-2 font-mono text-[0.7rem] text-coffee/50">
+              This dashboard is limited to admins. Set your profile&rsquo;s role to <span className="text-racing-700">admin</span> in the Supabase Table Editor to grant access.
+            </p>
+          )}
           <div className="mt-4 flex justify-center gap-2">
             <Link href="/login"><Button>Log in as admin</Button></Link>
             <Link href="/"><Button variant="ghost">Back to Explore</Button></Link>

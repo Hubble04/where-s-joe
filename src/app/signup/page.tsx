@@ -15,11 +15,14 @@ export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function submit() {
+  async function submit() {
     setError(null);
     if (!name.trim() || !username.trim() || !email.trim()) { setError('Please fill in name, username, and email.'); return; }
-    const res = signUp({ name: name.trim(), username: username.trim().replace(/^@/, ''), email: email.trim(), password });
+    setBusy(true);
+    const res = await signUp({ name: name.trim(), username: username.trim().replace(/^@/, ''), email: email.trim(), password });
+    setBusy(false);
     if (res.ok) router.push('/'); else setError(res.error ?? 'Could not create account.');
   }
 
@@ -46,7 +49,7 @@ export default function SignupPage() {
         <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" onKeyDown={(e) => e.key === 'Enter' && submit()} className="mb-4 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-racing-600" placeholder="Create a password" />
 
         {error && <p className="mb-3 font-mono text-xs text-red-700">{error}</p>}
-        <Button className="w-full" size="lg" onClick={submit}>Create account</Button>
+        <Button className="w-full" size="lg" onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Create account'}</Button>
 
         <p className="mt-5 text-center font-mono text-sm text-coffee/60">
           Already have an account? <Link href="/login" className="text-racing-600">Log in</Link>

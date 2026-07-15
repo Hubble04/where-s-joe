@@ -180,7 +180,7 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
     <Modal open onClose={onClose} title="Edit profile">
       <div className="mb-3">
         <label className={lbl}>Profile photo</label>
-        <PhotoUpload value={photo} onChange={setPhoto} multiple={false} label="Add photo" />
+        <PhotoUpload value={photo} onChange={setPhoto} multiple={false} label="Add photo" bucket="avatars" />
       </div>
       <div className="mb-3"><label className={lbl}>Name</label><input className={field} value={name} onChange={(e) => setName(e.target.value)} /></div>
       <div className="mb-3"><label className={lbl}>Username</label><input className={field} value={username} onChange={(e) => setUsername(e.target.value)} /></div>

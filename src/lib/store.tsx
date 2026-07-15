@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  createContext, useContext, useEffect, useMemo, useState, useCallback,
+  useEffect, useMemo, useState, useCallback,
   type ReactNode,
 } from 'react';
 import type {
@@ -11,6 +11,11 @@ import type {
 import {
   MOCK_CAFES, MOCK_USERS, MOCK_ME, MOCK_POSTS, MOCK_COMMENTS, MOCK_FOLLOWS,
 } from './mockData';
+import { hasSupabase } from './env';
+import { StoreContext, type StoreValue } from './storeContext';
+import { SupabaseStoreProvider } from './store.supabase';
+
+export { useStore } from './storeContext';
 
 const LS_KEY = 'wheres-joe:v2';
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -80,58 +85,7 @@ function load(): Persisted {
   } catch { return defaultState(); }
 }
 
-interface StoreValue {
-  ready: boolean;
-  me: Profile | null;
-  isAuthed: boolean;
-  users: Profile[];
-  cafes: Cafe[];
-  posts: Post[];
-  comments: Comment[];
-  saves: CafeSave[];
-  lists: CustomList[];
-  suggestions: SuggestedCafe[];
-  follows: { followerId: string; followingId: string }[];
-
-  getUser: (id: string) => Profile;
-  getCafe: (id: string) => Cafe | undefined;
-  isLiked: (postId: string) => boolean;
-  likeCount: (postId: string) => number;
-  commentsFor: (postId: string) => Comment[];
-  isFollowing: (userId: string) => boolean;
-  savesForCafe: (cafeId: string) => CafeSave[];
-  hasSave: (cafeId: string, type: SaveType) => boolean;
-  savesByType: (type: SaveType) => CafeSave[];
-  listsForMe: () => CustomList[];
-  myPosts: () => Post[];
-  mySuggestions: () => SuggestedCafe[];
-  feedPosts: (mode: string) => Post[];
-  postsForCafe: (cafeId: string) => Post[];
-
-  signIn: (email: string, password: string) => { ok: boolean; error?: string };
-  signUp: (i: { name: string; username: string; email: string; password: string; location?: string }) => { ok: boolean; error?: string };
-  signOut: () => void;
-  updateProfile: (patch: Partial<Profile>) => void;
-
-  toggleLike: (postId: string) => void;
-  addComment: (postId: string, content: string) => void;
-  toggleFollow: (userId: string) => void;
-  createPost: (i: { caption: string; cafeId: string | null; drinkTag: string | null; visibility: Visibility; photos: string[] }) => void;
-  toggleSave: (cafeId: string, type: SaveType) => void;
-  sipCafe: (cafeId: string, d: { note?: string; orderedDrink?: string; milkType?: string; recommend?: boolean | null }) => void;
-  createList: (name: string, description?: string) => string;
-  addToList: (listId: string, cafeId: string) => void;
-  removeFromList: (listId: string, cafeId: string) => void;
-  suggestCafe: (i: Omit<SuggestedCafe, 'id' | 'submittedBy' | 'moderationStatus' | 'createdAt' | 'submitterName'>) => void;
-
-  approveSuggestion: (id: string) => void;
-  rejectSuggestion: (id: string) => void;
-  deletePost: (id: string) => void;
-}
-
-const StoreContext = createContext<StoreValue | null>(null);
-
-export function StoreProvider({ children }: { children: ReactNode }) {
+function DemoStoreProvider({ children }: { children: ReactNode }) {
   const [s, setS] = useState<Persisted>(defaultState);
   const [ready, setReady] = useState(false);
 
@@ -235,14 +189,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [visiblePosts],
   );
 
-  const signIn = useCallback((email: string): { ok: boolean; error?: string } => {
+  const signIn = useCallback(async (email: string): Promise<{ ok: boolean; error?: string }> => {
     const existing = allUsers.find((u) => u.email?.toLowerCase() === email.toLowerCase());
     const target = existing ?? MOCK_ME;
     setS((p) => ({ ...p, currentUserId: target.id }));
     return { ok: true };
   }, [allUsers]);
 
-  const signUp = useCallback((i: { name: string; username: string; email: string; location?: string }): { ok: boolean; error?: string } => {
+  const signUp = useCallback(async (i: { name: string; username: string; email: string; location?: string }): Promise<{ ok: boolean; error?: string }> => {
     if (allUsers.some((u) => u.username.toLowerCase() === i.username.toLowerCase()))
       return { ok: false, error: 'That username is taken.' };
     setS((p) => ({
@@ -376,8 +330,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 
-export function useStore(): StoreValue {
-  const ctx = useContext(StoreContext);
-  if (!ctx) throw new Error('useStore must be used within StoreProvider');
-  return ctx;
+export function StoreProvider({ children }: { children: ReactNode }) {
+  return hasSupabase
+    ? <SupabaseStoreProvider>{children}</SupabaseStoreProvider>
+    : <DemoStoreProvider>{children}</DemoStoreProvider>;
 }

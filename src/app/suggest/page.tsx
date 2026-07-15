@@ -75,7 +75,7 @@ export default function SuggestPage() {
 
         <div>
           <label className={lbl}>Photo</label>
-          <PhotoUpload value={photos} onChange={setPhotos} multiple={false} label="Add photo" />
+          <PhotoUpload value={photos} onChange={setPhotos} multiple={false} label="Add photo" bucket="cafe-images" />
         </div>
 
         <div>
