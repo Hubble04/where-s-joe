@@ -1,5 +1,5 @@
 'use client';
-import { use, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
@@ -12,8 +12,8 @@ import { MapView } from '@/components/MapView';
 import { PostCard } from '@/components/PostCard';
 import { SectionTitle, SignInPrompt, Modal } from '@/components/ui';
 
-export default function CafePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function CafePage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const router = useRouter();
   const { getCafe, postsForCafe, savesForCafe } = useStore();
   const [authPrompt, setAuthPrompt] = useState(false);

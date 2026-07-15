@@ -1,5 +1,5 @@
 'use client';
-import { use, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
@@ -8,8 +8,8 @@ import { MapView } from '@/components/MapView';
 import { EmptyState, Modal, SignInPrompt } from '@/components/ui';
 import { Button } from '@/components/Button';
 
-export default function ListDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ListDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const router = useRouter();
   const { me, lists, getCafe, cafes, addToList, removeFromList } = useStore();
   const [view, setView] = useState<'list' | 'map'>('list');
