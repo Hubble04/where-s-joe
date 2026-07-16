@@ -92,12 +92,12 @@ export const TAG_CATEGORY: Record<string, string> = Object.fromEntries(
 
 /** Quick filters shown on Explore (behavior/attribute-based). */
 export const QUICK_FILTERS = [
+  'Nearby',
   'Open Now',
   'Verified by Joe',
   'Wi-Fi',
   'Outdoor Seating',
   'Parking',
-  'Nearby',
 ] as const;
 
 export const DRINK_TYPES = [
