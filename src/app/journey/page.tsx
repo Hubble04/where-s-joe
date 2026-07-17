@@ -116,7 +116,7 @@ function ListsSection() {
         <Button size="sm" onClick={() => setCreating(true)}>+ New list</Button>
       </div>
       {lists.length === 0 ? (
-        <EmptyState title="No lists yet" body="Group cafés into themed lists like 'Austin Coffee Crawl' or 'Best Study Spots'." action={<Button onClick={() => setCreating(true)}>Create a list</Button>} />
+        <EmptyState title="No lists yet" body="Group cafés into themed lists like 'Weekend Coffee Crawl' or 'Best Study Spots'." action={<Button onClick={() => setCreating(true)}>Create a list</Button>} />
       ) : (
         <div className="space-y-3">
           {lists.map((l) => {
@@ -144,7 +144,7 @@ function ListsSection() {
 
       <Modal open={creating} onClose={() => setCreating(false)} title="New list">
         <label className="mb-1 block font-mono text-xs text-coffee/60">List name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className="mb-3 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm" placeholder="e.g. Austin Coffee Crawl" />
+        <input value={name} onChange={(e) => setName(e.target.value)} className="mb-3 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm" placeholder="e.g. Weekend Coffee Crawl" />
         <label className="mb-1 block font-mono text-xs text-coffee/60">Description (optional)</label>
         <input value={desc} onChange={(e) => setDesc(e.target.value)} className="mb-4 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm" />
         <Button className="w-full" onClick={() => { if (name.trim()) { createList(name.trim(), desc.trim()); setName(''); setDesc(''); setCreating(false); } }}>Create list</Button>

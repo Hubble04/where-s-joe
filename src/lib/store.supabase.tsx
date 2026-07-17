@@ -432,7 +432,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     });
   }, [meId, supabase]);
 
-  const approveSuggestion = useCallback((id: string) => {
+  const approveSuggestion = useCallback((id: string, coords: { lat: number; lng: number }) => {
     (async () => {
       const sug = suggestions.find((s) => s.id === id);
       if (!sug) return;
@@ -440,6 +440,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
         name: sug.name, address: sug.address, city: sug.city, state: sug.state, country: sug.country,
         description: sug.description, website: sug.website ?? null, instagram: sug.instagram ?? null,
         cover_photo_url: sug.photoUrl ?? '', status: 'approved',
+        latitude: coords.lat, longitude: coords.lng,
       }).select().single();
       if (e1) { console.error(e1); return; }
       if (sug.tags && sug.tags.length > 0 && newCafe) {

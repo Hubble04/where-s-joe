@@ -56,7 +56,7 @@ export interface StoreValue {
   removeFromList: (listId: string, cafeId: string) => void;
   suggestCafe: (i: Omit<SuggestedCafe, 'id' | 'submittedBy' | 'moderationStatus' | 'createdAt' | 'submitterName'>) => void;
 
-  approveSuggestion: (id: string) => void;
+  approveSuggestion: (id: string, coords: { lat: number; lng: number }) => void;
   rejectSuggestion: (id: string) => void;
   deletePost: (id: string) => void;
 }

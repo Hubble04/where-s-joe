@@ -1,6 +1,6 @@
 # Where's Joe? ☕
 
-A mobile-first community platform for discovering independent coffee shops in Austin, TX — think *Instagram + Google Maps + a Coffee Passport*. Explore cafés, share your visits, stamp your passport, and help grow the map.
+A mobile-first community platform for discovering independent coffee shops — think *Instagram + Google Maps + a Coffee Passport*. Explore cafés, share your visits, stamp your passport, and help grow the map.
 
 Built with **Next.js 14 (App Router)**, **TypeScript**, **Tailwind CSS**, and **Supabase**, with a **Mapbox** map. The whole app is designed for **graceful degradation**: it runs fully on bundled mock data with **zero configuration**, and lights up real accounts, data, and a live map as you add keys.
 
@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:3000**. That's it — with no keys at all, the app runs in **demo mode**: seven real Austin cafés, a working Coffee Passport, community feed, posting, saving, following, and café suggestions, all persisted in your browser's `localStorage`. A "Demo" badge appears in the header so testers know what mode they're in.
+Open **http://localhost:3000**. That's it — with no keys at all, the app runs in **demo mode**: seven sample cafés, a working Coffee Passport, community feed, posting, saving, following, and café suggestions, all persisted in your browser's `localStorage`. A "Demo" badge appears in the header so testers know what mode they're in.
 
 > Requires Node.js 18.17+ (Node 20+ recommended).
 
@@ -95,7 +95,7 @@ src/
   lib/
     store.tsx          # Client data store (demo engine + localStorage persistence)
     types.ts           # Domain types (mirror the DB schema)
-    mockData.ts        # Seven Austin cafés + sample users/posts for demo mode
+    mockData.ts        # Seven sample cafés + sample users/posts for demo mode
     brand.ts           # Logos, palette, tag taxonomy, dropdown option lists
     env.ts             # Reads env vars; exposes hasSupabase / hasMapbox / isDemoMode
     utils.ts           # Formatting, distance, open-now, tag grouping helpers

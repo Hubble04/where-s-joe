@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
+import type { SuggestedCafe } from '@/lib/types';
 import { SectionTitle, EmptyState, Chip } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { timeAgo } from '@/lib/utils';
@@ -58,28 +59,7 @@ export default function AdminPage() {
       {tab === 'Suggestions' && (
         pending.length === 0 ? <EmptyState title="Queue is clear" body="No café suggestions awaiting review." /> : (
           <div className="space-y-3">
-            {pending.map((s) => (
-              <div key={s.id} className="rounded-card bg-ivory p-4 shadow-card">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="font-display text-xl text-racing-700">{s.name}</h3>
-                    <p className="font-mono text-xs text-coffee/55">{s.address ? s.address + ' · ' : ''}{s.city}{s.state ? `, ${s.state}` : ''}</p>
-                  </div>
-                  <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(s.createdAt)}</span>
-                </div>
-                {s.description && <p className="mt-2 text-sm text-coffee/80">{s.description}</p>}
-                {s.tags && s.tags.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {s.tags.map((t) => <span key={t} className="rounded-pill bg-parchment px-2 py-0.5 font-mono text-[0.65rem] text-coffee/70">{t}</span>)}
-                  </div>
-                )}
-                <p className="mt-2 font-mono text-[0.65rem] text-coffee/45">Suggested by {s.submitterName || 'a member'}</p>
-                <div className="mt-3 flex gap-2">
-                  <Button className="flex-1" onClick={() => approveSuggestion(s.id)}>Approve</Button>
-                  <Button variant="danger" className="flex-1" onClick={() => rejectSuggestion(s.id)}>Reject</Button>
-                </div>
-              </div>
-            ))}
+            {pending.map((s) => <PendingSuggestionCard key={s.id} suggestion={s} />)}
           </div>
         )
       )}
@@ -139,6 +119,57 @@ function Stat({ label, value }: { label: string; value: number }) {
     <div className="rounded-card bg-parchment px-2 py-3 text-center">
       <div className="font-display text-xl text-racing-700">{value}</div>
       <div className="font-mono text-[0.6rem] text-coffee/55">{label}</div>
+    </div>
+  );
+}
+
+function PendingSuggestionCard({ suggestion: s }: { suggestion: SuggestedCafe }) {
+  const { approveSuggestion, rejectSuggestion } = useStore();
+  const [lat, setLat] = useState('');
+  const [lng, setLng] = useState('');
+  const latNum = parseFloat(lat);
+  const lngNum = parseFloat(lng);
+  const validCoords = lat.trim() !== '' && lng.trim() !== ''
+    && Number.isFinite(latNum) && Number.isFinite(lngNum)
+    && latNum >= -90 && latNum <= 90 && lngNum >= -180 && lngNum <= 180;
+
+  const mapsQuery = encodeURIComponent([s.address, s.city, s.state].filter(Boolean).join(', '));
+  const field = 'w-full rounded-xl border border-racing-100 bg-ivory px-2.5 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-racing-600';
+
+  return (
+    <div className="rounded-card bg-ivory p-4 shadow-card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="font-display text-xl text-racing-700">{s.name}</h3>
+          <p className="font-mono text-xs text-coffee/55">{s.address ? s.address + ' · ' : ''}{s.city}{s.state ? `, ${s.state}` : ''}</p>
+        </div>
+        <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(s.createdAt)}</span>
+      </div>
+      {s.description && <p className="mt-2 text-sm text-coffee/80">{s.description}</p>}
+      {s.tags && s.tags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {s.tags.map((t) => <span key={t} className="rounded-pill bg-parchment px-2 py-0.5 font-mono text-[0.65rem] text-coffee/70">{t}</span>)}
+        </div>
+      )}
+      <p className="mt-2 font-mono text-[0.65rem] text-coffee/45">Suggested by {s.submitterName || 'a member'}</p>
+
+      <div className="mt-3 rounded-card bg-parchment p-3">
+        <p className="mb-2 font-mono text-[0.65rem] text-coffee/60">
+          Pin its real location to approve — look it up on{' '}
+          <a href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`} target="_blank" rel="noreferrer" className="text-racing-600 underline">
+            Google Maps
+          </a>, right-click the spot, and copy the coordinates shown.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <input value={lat} onChange={(e) => setLat(e.target.value)} placeholder="Latitude" inputMode="decimal" className={field} />
+          <input value={lng} onChange={(e) => setLng(e.target.value)} placeholder="Longitude" inputMode="decimal" className={field} />
+        </div>
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        <Button className="flex-1" disabled={!validCoords} onClick={() => approveSuggestion(s.id, { lat: latNum, lng: lngNum })}>Approve</Button>
+        <Button variant="danger" className="flex-1" onClick={() => rejectSuggestion(s.id)}>Reject</Button>
+      </div>
     </div>
   );
 }

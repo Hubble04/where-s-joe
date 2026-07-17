@@ -8,8 +8,6 @@ import { MapView } from '@/components/MapView';
 import { SearchBar, Chip, EmptyState, SectionTitle } from '@/components/ui';
 import { BeanCard } from '@/components/BeanCard';
 
-const AUSTIN = { lat: 30.2672, lng: -97.7431 };
-
 export default function ExplorePage() {
   const { ready, cafes } = useStore();
   const [query, setQuery] = useState('');
@@ -17,6 +15,7 @@ export default function ExplorePage() {
   const [view, setView] = useState<'list' | 'map'>('list');
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
+  const [locationDenied, setLocationDenied] = useState(false);
 
   function toggleFilter(f: string) {
     if (f === 'Nearby' && !origin) requestLocation();
@@ -24,11 +23,12 @@ export default function ExplorePage() {
   }
 
   function requestLocation() {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) { setLocationDenied(true); return; }
     setLocating(true);
+    setLocationDenied(false);
     navigator.geolocation.getCurrentPosition(
       (pos) => { setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setLocating(false); },
-      () => { setOrigin(AUSTIN); setLocating(false); },
+      () => { setLocating(false); setLocationDenied(true); },
       { timeout: 8000 },
     );
   }
@@ -49,9 +49,8 @@ export default function ExplorePage() {
       }
       return true;
     });
-    const geo = origin ?? (active.includes('Nearby') ? AUSTIN : null);
-    if (geo && active.includes('Nearby')) {
-      list = [...list].sort((a, b) => distanceMiles(geo, { lat: a.lat, lng: a.lng }) - distanceMiles(geo, { lat: b.lat, lng: b.lng }));
+    if (origin && active.includes('Nearby')) {
+      list = [...list].sort((a, b) => distanceMiles(origin, { lat: a.lat, lng: a.lng }) - distanceMiles(origin, { lat: b.lat, lng: b.lng }));
     }
     return list;
   }, [cafes, query, active, origin]);
@@ -59,7 +58,7 @@ export default function ExplorePage() {
   return (
     <div className="px-4 py-4">
       <div className="mb-4">
-        <p className="eyebrow mb-1">Independent coffee · Austin, TX</p>
+        <p className="eyebrow mb-1">Independent coffee near you</p>
         <h1 className="font-display text-3xl leading-tight text-racing-700">Where will you sip next?</h1>
       </div>
 
@@ -74,6 +73,11 @@ export default function ExplorePage() {
           <Chip key={f} label={f === 'Nearby' && locating ? 'Locating…' : f} active={active.includes(f)} onClick={() => toggleFilter(f)} />
         ))}
       </div>
+      {active.includes('Nearby') && !origin && locationDenied && (
+        <p className="mt-2 font-mono text-xs text-coffee/60">
+          Location access is off, so distance sorting is unavailable — showing every café. Try searching a city or neighborhood above instead.
+        </p>
+      )}
 
       <div className="mt-4 flex items-center justify-between">
         <p className="font-mono text-xs text-coffee/60">{filtered.length} café{filtered.length === 1 ? '' : 's'}</p>
@@ -96,7 +100,7 @@ export default function ExplorePage() {
           <MapView cafes={filtered} origin={origin} className="h-[60vh] w-full" />
         ) : (
           <div className="space-y-4">
-            {filtered.map((c) => <CafeCard key={c.id} cafe={c} origin={active.includes('Nearby') ? (origin ?? AUSTIN) : null} />)}
+            {filtered.map((c) => <CafeCard key={c.id} cafe={c} origin={active.includes('Nearby') ? origin : null} />)}
           </div>
         )}
       </div>

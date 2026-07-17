@@ -12,7 +12,12 @@ export function MapView(props: Props) {
   return hasMapbox ? <MapboxMap {...props} /> : <StaticMap {...props} />;
 }
 
-function MapboxMap({ cafes, className }: Props) {
+/**
+ * Centering priority: the user's real location if we have it, otherwise fit
+ * the map to whichever cafés are currently shown, otherwise (nothing to show
+ * and no location) fall back to a neutral world view — never a fixed city.
+ */
+function MapboxMap({ cafes, origin, className }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
@@ -21,8 +26,21 @@ function MapboxMap({ cafes, className }: Props) {
       const mapboxgl = (await import('mapbox-gl')).default;
       mapboxgl.accessToken = env.mapboxToken;
       if (!ref.current) return;
-      const center: [number, number] = cafes[0] ? [cafes[0].lng, cafes[0].lat] : [-97.7431, 30.2672];
-      map = new mapboxgl.Map({ container: ref.current, style: 'mapbox://styles/mapbox/light-v11', center, zoom: 12 });
+
+      const initialCenter: [number, number] = origin
+        ? [origin.lng, origin.lat]
+        : cafes[0] ? [cafes[0].lng, cafes[0].lat] : [0, 20];
+      const initialZoom = origin || cafes.length > 0 ? 12 : 1.3;
+      map = new mapboxgl.Map({ container: ref.current, style: 'mapbox://styles/mapbox/light-v11', center: initialCenter, zoom: initialZoom });
+
+      if (!origin && cafes.length > 1) {
+        const bounds = cafes.reduce(
+          (b, c) => b.extend([c.lng, c.lat]),
+          new mapboxgl.LngLatBounds([cafes[0].lng, cafes[0].lat], [cafes[0].lng, cafes[0].lat]),
+        );
+        map.fitBounds(bounds, { padding: 56, maxZoom: 14, duration: 0 });
+      }
+
       map.on('load', () => setLoaded(true));
       cafes.forEach((c) => {
         const el = document.createElement('div');
@@ -34,7 +52,7 @@ function MapboxMap({ cafes, className }: Props) {
       });
     })();
     return () => map?.remove();
-  }, [cafes]);
+  }, [cafes, origin]);
   return (
     <div className={cn('relative overflow-hidden rounded-card', className)}>
       <div ref={ref} className="h-full w-full" />
@@ -46,6 +64,15 @@ function MapboxMap({ cafes, className }: Props) {
 /** No token → project coords onto a stylised street panel. */
 function StaticMap({ cafes, className }: Props) {
   const [sel, setSel] = useState<Cafe | null>(null);
+
+  if (cafes.length === 0) {
+    return (
+      <div className={cn('flex items-center justify-center rounded-card border border-racing-100 bg-parchment font-mono text-sm text-coffee/50', className)}>
+        No cafés to show on the map yet.
+      </div>
+    );
+  }
+
   const lats = cafes.map((c) => c.lat), lngs = cafes.map((c) => c.lng);
   const minLat = Math.min(...lats) - 0.01, maxLat = Math.max(...lats) + 0.01;
   const minLng = Math.min(...lngs) - 0.01, maxLng = Math.max(...lngs) + 0.01;

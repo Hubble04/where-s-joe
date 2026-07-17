@@ -204,7 +204,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
       currentUserId: MOCK_ME.id,
       profileOverrides: {
         ...p.profileOverrides,
-        [MOCK_ME.id]: { name: i.name, username: i.username, email: i.email, location: i.location ?? 'Austin, TX' },
+        [MOCK_ME.id]: { name: i.name, username: i.username, email: i.email, location: i.location ?? '' },
       },
     }));
     return { ok: true };
@@ -293,13 +293,13 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, suggestions: [sug, ...p.suggestions] }));
   }, [me]);
 
-  const approveSuggestion = useCallback((id: string) => {
+  const approveSuggestion = useCallback((id: string, coords: { lat: number; lng: number }) => {
     setS((p) => {
       const sug = p.suggestions.find((x) => x.id === id);
       if (!sug) return p;
       const newCafe: Cafe = {
         id: 'sug-' + id, name: sug.name, address: sug.address, city: sug.city, state: sug.state,
-        country: sug.country, lat: 30.2672, lng: -97.7431, description: sug.description,
+        country: sug.country, lat: coords.lat, lng: coords.lng, description: sug.description,
         website: sug.website, instagram: sug.instagram, coverPhotoUrl: sug.photoUrl || '',
         gallery: [], verifiedByJoe: false, status: 'approved', createdAt: nowISO(),
         tags: sug.tags || [], neighborhood: sug.city, rating: 0, reviewCount: 0, priceTier: 2,
