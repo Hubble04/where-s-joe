@@ -4,11 +4,6 @@ export function cn(...classes: Array<string | false | null | undefined>): string
   return classes.filter(Boolean).join(' ');
 }
 
-/** Price tier → dollar signs. Defaults to $$ when unknown. */
-export function priceLabel(tier?: 1 | 2 | 3): string {
-  return '$'.repeat(tier ?? 2);
-}
-
 /** First 1–2 initials from a name, for stamps/avatars/pins. */
 export function monogram(name: string): string {
   const words = (name || 'Joe').replace(/^The\s+/i, '').trim().split(/\s+/);

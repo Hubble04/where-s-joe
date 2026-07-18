@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import type { Cafe } from '@/lib/types';
-import { cn, priceLabel, isOpenNow, distanceMiles } from '@/lib/utils';
+import { cn, isOpenNow, distanceMiles } from '@/lib/utils';
 import { ImageWithFallback } from './ImageWithFallback';
 import { Rating, VerifiedBadge } from './Badge';
 
@@ -66,7 +66,6 @@ export function CafeCard({ cafe, origin, variant = 'feed' }: { cafe: Cafe; origi
           <p className="mt-0.5 font-mono text-xs text-coffee/60">
             {cafe.neighborhood} · {cafe.city}, {cafe.state}
             {dist != null && <> · {dist.toFixed(1)} mi</>}
-            {cafe.priceTier && <> · {priceLabel(cafe.priceTier)}</>}
           </p>
           <p className="mt-2 line-clamp-2 text-sm text-coffee/80">{cafe.description}</p>
           <div className="mt-3 flex flex-wrap gap-1.5">

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { TAG_CATEGORY } from '@/lib/brand';
-import { groupTags, priceLabel, openLabel } from '@/lib/utils';
+import { groupTags, openLabel } from '@/lib/utils';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { Rating, VerifiedBadge } from '@/components/Badge';
 import { SaveActions } from '@/components/SaveActions';
@@ -48,7 +48,7 @@ export default function CafePage({ params }: { params: { id: string } }) {
             <div>
               {cafe.verifiedByJoe && <div className="mb-1"><VerifiedBadge /></div>}
               <h1 className="font-display text-3xl leading-tight text-racing-700">{cafe.name}</h1>
-              <p className="mt-1 font-mono text-xs text-coffee/60">{cafe.neighborhood} · {cafe.city}, {cafe.state} · {priceLabel(cafe.priceTier)}</p>
+              <p className="mt-1 font-mono text-xs text-coffee/60">{cafe.neighborhood} · {cafe.city}, {cafe.state}</p>
             </div>
             <Rating value={cafe.rating} count={cafe.reviewCount} />
           </div>
