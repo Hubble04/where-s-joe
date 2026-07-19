@@ -56,10 +56,10 @@ export default function ExplorePage() {
   }, [cafes, query, active, origin]);
 
   return (
-    <div className="px-4 py-4">
-      <div className="mb-4">
-        <p className="eyebrow mb-1">Independent coffee near you</p>
-        <h1 className="font-display text-3xl leading-tight text-racing-700">Where will you sip next?</h1>
+    <div className="px-4 py-5">
+      <div className="mb-5 border-b border-racing-100 pb-5">
+        <p className="eyebrow mb-1.5">Independent coffee near you</p>
+        <h1 className="font-display text-[2.15rem] leading-[1.05] text-racing-700">Where will you sip next?</h1>
       </div>
 
       <BeanCard />
@@ -79,27 +79,27 @@ export default function ExplorePage() {
         </p>
       )}
 
-      <div className="mt-4 flex items-center justify-between">
-        <p className="font-mono text-xs text-coffee/60">{filtered.length} café{filtered.length === 1 ? '' : 's'}</p>
+      <div className="mt-5 flex items-center justify-between border-b border-racing-100 pb-3">
+        <p className="font-mono text-[0.7rem] uppercase tracking-wide text-coffee/50">{filtered.length} café{filtered.length === 1 ? '' : 's'}</p>
         <div className="flex rounded-pill border border-racing-100 p-0.5">
           {(['list', 'map'] as const).map((v) => (
             <button key={v} onClick={() => setView(v)}
-              className={`rounded-pill px-3 py-1 font-mono text-xs capitalize ${view === v ? 'bg-racing-600 text-ivory' : 'text-coffee/60'}`}>
+              className={`rounded-pill px-3 py-1 font-mono text-[0.7rem] uppercase tracking-wide ${view === v ? 'bg-racing-600 text-ivory' : 'text-coffee/60'}`}>
               {v}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="mt-3">
+      <div className="mt-4">
         {!ready ? (
-          <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <CafeCardSkeleton key={i} />)}</div>
+          <div>{Array.from({ length: 3 }).map((_, i) => <CafeCardSkeleton key={i} />)}</div>
         ) : filtered.length === 0 ? (
           <EmptyState title="No cafés match" body="Try clearing a filter or searching a different vibe." />
         ) : view === 'map' ? (
           <MapView cafes={filtered} origin={origin} className="h-[60vh] w-full" />
         ) : (
-          <div className="space-y-4">
+          <div>
             {filtered.map((c) => <CafeCard key={c.id} cafe={c} origin={active.includes('Nearby') ? origin : null} />)}
           </div>
         )}

@@ -14,7 +14,7 @@ function ActionButton({ active, onClick, activeColor, icon, label }: {
     <button
       onClick={onClick}
       className={cn(
-        'flex flex-1 flex-col items-center gap-1 rounded-card border px-2 py-2.5 font-mono text-[0.7rem] transition-colors',
+        'flex flex-1 flex-col items-center gap-1 rounded-card border px-2 py-2.5 font-mono text-[0.65rem] uppercase tracking-wide transition-colors',
         active ? activeColor : 'border-racing-100 bg-ivory text-coffee/70 hover:border-racing-300',
       )}
     >

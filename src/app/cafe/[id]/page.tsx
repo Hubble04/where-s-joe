@@ -4,13 +4,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { TAG_CATEGORY } from '@/lib/brand';
-import { groupTags, openLabel } from '@/lib/utils';
+import { groupTags, openLabel, isOpenNow } from '@/lib/utils';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { Rating, VerifiedBadge } from '@/components/Badge';
 import { SaveActions } from '@/components/SaveActions';
 import { MapView } from '@/components/MapView';
 import { PostCard } from '@/components/PostCard';
-import { SectionTitle, SignInPrompt, Modal } from '@/components/ui';
+import { SectionTitle, SignInPrompt, Modal, SpecList } from '@/components/ui';
 
 export default function CafePage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -32,45 +32,48 @@ export default function CafePage({ params }: { params: { id: string } }) {
   const grouped = groupTags(cafe.tags, TAG_CATEGORY);
   const posts = postsForCafe(cafe.id);
   const mySip = savesForCafe(cafe.id).find((s) => s.saveType === 'sipped_there');
+  const openState = isOpenNow(cafe);
+  const location = [cafe.neighborhood, `${cafe.city}, ${cafe.state}`].filter(Boolean).join('  ·  ');
 
   return (
     <div className="pb-6">
       <div className="relative">
         <ImageWithFallback src={cafe.coverPhotoUrl} alt={cafe.name} seed={cafe.name} className="aspect-[16/11] w-full" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-racing-900/25 to-transparent" />
         <button onClick={() => router.back()} aria-label="Back"
           className="absolute left-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-ivory/90 shadow-card">
           <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-racing-700" strokeWidth={1.8}><path d="M15 6l-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
+        {cafe.verifiedByJoe && <div className="absolute right-3 top-3"><VerifiedBadge /></div>}
       </div>
 
       <div className="px-4">
-        <div className="-mt-6 rounded-card bg-ivory p-4 shadow-card">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              {cafe.verifiedByJoe && <div className="mb-1"><VerifiedBadge /></div>}
-              <h1 className="font-display text-3xl leading-tight text-racing-700">{cafe.name}</h1>
-              <p className="mt-1 font-mono text-xs text-coffee/60">{cafe.neighborhood} · {cafe.city}, {cafe.state}</p>
-            </div>
+        <div className="-mt-6 rounded-t-card bg-ivory px-4 pb-5 pt-5 shadow-card">
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="font-display text-[1.9rem] leading-[1.05] text-racing-700">{cafe.name}</h1>
             <Rating value={cafe.rating} count={cafe.reviewCount} />
           </div>
-          <p className="mt-2 font-mono text-xs text-racing-600">{openLabel(cafe)}</p>
 
           <div className="mt-3 flex flex-wrap gap-2">
             {cafe.website && <ContactPill href={cafe.website} label="Website" icon="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />}
             {cafe.instagram && <ContactPill href={`https://instagram.com/${cafe.instagram.replace('@', '')}`} label={cafe.instagram} icon="M4 8a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M17 7h0" />}
             {cafe.phone && <ContactPill href={`tel:${cafe.phone}`} label={cafe.phone} icon="M4 5a2 2 0 0 1 2-2h2l2 5-2 1a11 11 0 0 0 5 5l1-2 5 2v2a2 2 0 0 1-2 2A16 16 0 0 1 4 5z" />}
           </div>
-          {cafe.address && (
-            <button
-              onClick={() => setDirectionsPrompt(true)}
-              className="mt-2 flex items-center gap-1 font-mono text-xs text-coffee/55 underline decoration-dotted underline-offset-2"
-            >
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 fill-none stroke-current" strokeWidth={1.6}>
-                <path d="M12 21s7-7.58 7-12A7 7 0 1 0 5 9c0 4.42 7 12 7 12z M12 11.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {cafe.address}
-            </button>
-          )}
+
+          <div className="mt-4">
+            <SpecList items={[
+              { label: 'Location', value: location },
+              { label: 'Hours', value: <span className={openState ? 'text-racing-600' : undefined}>{openLabel(cafe)}</span> },
+              ...(cafe.address ? [{
+                label: 'Address',
+                value: (
+                  <button onClick={() => setDirectionsPrompt(true)} className="underline decoration-dotted underline-offset-2">
+                    {cafe.address}
+                  </button>
+                ),
+              }] : []),
+            ]} />
+          </div>
         </div>
 
         <div className="mt-4">
@@ -86,15 +89,15 @@ export default function CafePage({ params }: { params: { id: string } }) {
           <SectionTitle eyebrow="On the menu" title="Popular drinks" />
           <div className="flex gap-3 overflow-x-auto pb-1">
             {cafe.signatureDrink && (
-              <div className="flex w-40 shrink-0 flex-col rounded-card border border-amber/30 bg-amber/5 p-3">
-                <span className="font-heading text-base text-racing-700">{cafe.signatureDrink}</span>
-                <span className="mt-1 font-mono text-[0.65rem] text-amber-dark">Signature</span>
+              <div className="flex h-24 w-40 shrink-0 flex-col justify-between rounded-card border border-racing-300 p-3.5">
+                <span className="font-mono text-[0.6rem] uppercase tracking-eyebrow text-gold">Signature</span>
+                <span className="font-display text-lg leading-[1.1] text-racing-700">{cafe.signatureDrink}</span>
               </div>
             )}
             {['House Latte', 'Cold Brew', 'Pour Over'].map((d) => (
-              <div key={d} className="flex w-40 shrink-0 flex-col rounded-card border border-racing-100 bg-ivory p-3">
-                <span className="font-heading text-base text-racing-700">{d}</span>
-                <span className="mt-1 font-mono text-[0.65rem] text-coffee/40">Menu coming soon</span>
+              <div key={d} className="flex h-24 w-40 shrink-0 flex-col justify-between rounded-card border border-racing-100 p-3.5">
+                <span className="font-mono text-[0.6rem] uppercase tracking-eyebrow text-coffee/35">Menu</span>
+                <span className="font-display text-lg leading-[1.1] text-racing-700/70">{d}</span>
               </div>
             ))}
           </div>
@@ -102,13 +105,11 @@ export default function CafePage({ params }: { params: { id: string } }) {
 
         <section className="mt-6">
           <SectionTitle eyebrow="Good to know" title="Tags" />
-          <div className="space-y-3">
+          <div className="space-y-4">
             {grouped.map((g) => (
               <div key={g.category}>
-                <p className="mb-1.5 font-mono text-[0.65rem] uppercase tracking-eyebrow text-coffee/45">{g.category}</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {g.tags.map((t) => <span key={t} className="rounded-pill bg-parchment px-2.5 py-1 font-mono text-[0.7rem] text-coffee/80">{t}</span>)}
-                </div>
+                <p className="mb-1 font-mono text-[0.62rem] uppercase tracking-eyebrow text-coffee/40">{g.category}</p>
+                <p className="font-mono text-[0.78rem] leading-relaxed text-coffee/80">{g.tags.join('   ·   ')}</p>
               </div>
             ))}
           </div>

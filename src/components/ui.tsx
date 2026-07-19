@@ -10,12 +10,29 @@ export function Avatar({ src, name, className }: { src?: string; name: string; c
 
 export function SectionTitle({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: ReactNode }) {
   return (
-    <div className="mb-3 flex items-end justify-between">
-      <div>
-        {eyebrow && <div className="eyebrow mb-1">{eyebrow}</div>}
-        <h2 className="font-display text-2xl text-racing-700">{title}</h2>
+    <div className="mb-4">
+      <div className="flex items-end justify-between">
+        <div>
+          {eyebrow && <div className="eyebrow mb-1">{eyebrow}</div>}
+          <h2 className="font-display text-2xl text-racing-700">{title}</h2>
+        </div>
+        {action}
       </div>
-      {action}
+      <div className="mt-3 border-t border-racing-100" />
+    </div>
+  );
+}
+
+/** Editorial "spec sheet" row list — label:value pairs divided by hairlines, like a coffee-bag label or a watch spec table. */
+export function SpecList({ items }: { items: { label: string; value: ReactNode }[] }) {
+  return (
+    <div className="divide-y divide-racing-100 border-y border-racing-100">
+      {items.map((it, i) => (
+        <div key={i} className="flex items-start justify-between gap-4 py-2.5">
+          <span className="shrink-0 pt-px font-mono text-[0.65rem] uppercase tracking-eyebrow text-coffee/45">{it.label}</span>
+          <span className="text-right font-mono text-sm leading-relaxed text-coffee/85">{it.value}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -60,7 +77,7 @@ export function Chip({ label, active, onClick }: { label: string; active?: boole
     <button
       onClick={onClick}
       className={cn(
-        'whitespace-nowrap rounded-pill border px-3.5 py-1.5 font-mono text-xs transition-colors',
+        'whitespace-nowrap rounded-pill border px-3.5 py-1.5 font-mono text-[0.7rem] uppercase tracking-wide transition-colors',
         active ? 'border-racing-600 bg-racing-600 text-ivory' : 'border-racing-100 bg-ivory text-coffee/70 hover:border-racing-300',
       )}
     >
