@@ -44,7 +44,7 @@ export default function CafePage({ params }: { params: { id: string } }) {
       </div>
 
       <div className="px-4">
-        <div className="-mt-6 rounded-card bg-ivory p-4 shadow-card">
+        <div className="-mt-6 rounded-card bg-ivory px-4 pb-4 pt-8 shadow-card">
           <div className="flex items-start justify-between gap-2">
             <div>
               {cafe.verifiedByJoe && <div className="mb-1"><VerifiedBadge /></div>}
