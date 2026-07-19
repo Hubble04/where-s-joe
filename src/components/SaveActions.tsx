@@ -68,11 +68,19 @@ export function SaveActions({ cafe, onNeedAuth }: { cafe: Cafe; onNeedAuth: () =
   );
 }
 
+/** Combines a base drink type with an optional flavor/seasonal twist into one display string. */
+function combineDrink(drink: string, flavor: string): string | undefined {
+  const d = drink.trim(), f = flavor.trim();
+  if (f && d) return `${f} ${d}`;
+  return f || d || undefined;
+}
+
 export function SippedModal({ cafe, open, onClose, onSubmit }: {
   cafe: Cafe; open: boolean; onClose: () => void;
   onSubmit: (d: { orderedDrink?: string; milkType?: string; recommend?: boolean | null; note?: string }) => void;
 }) {
   const [drink, setDrink] = useState('');
+  const [flavor, setFlavor] = useState('');
   const [milk, setMilk] = useState('');
   const [rec, setRec] = useState<boolean | null>(null);
 
@@ -84,6 +92,12 @@ export function SippedModal({ cafe, open, onClose, onSubmit }: {
         <option value="">Select a drink…</option>
         {DRINK_TYPES.map((d) => <option key={d}>{d}</option>)}
       </select>
+      <label className="mb-1 block font-mono text-xs text-coffee/60">Any seasonal or flavor twist? (optional)</label>
+      <input
+        value={flavor} onChange={(e) => setFlavor(e.target.value)}
+        placeholder="e.g. Tiramisu, Pumpkin Spice, Lavender"
+        className="mb-4 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-racing-600"
+      />
       <label className="mb-1 block font-mono text-xs text-coffee/60">Milk type?</label>
       <select value={milk} onChange={(e) => setMilk(e.target.value)} className="mb-4 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm">
         <option value="">Select milk…</option>
@@ -96,7 +110,7 @@ export function SippedModal({ cafe, open, onClose, onSubmit }: {
       </div>
       <div className="flex gap-2">
         <Button variant="ghost" className="flex-1" onClick={() => onSubmit({})}>Skip</Button>
-        <Button variant="primary" className="flex-1" onClick={() => onSubmit({ orderedDrink: drink || undefined, milkType: milk || undefined, recommend: rec })}>Save stamp</Button>
+        <Button variant="primary" className="flex-1" onClick={() => onSubmit({ orderedDrink: combineDrink(drink, flavor), milkType: milk || undefined, recommend: rec })}>Save stamp</Button>
       </div>
     </Modal>
   );
