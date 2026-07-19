@@ -17,6 +17,7 @@ export default function CafePage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { getCafe, postsForCafe, savesForCafe } = useStore();
   const [authPrompt, setAuthPrompt] = useState(false);
+  const [directionsPrompt, setDirectionsPrompt] = useState(false);
   const cafe = getCafe(id);
 
   if (!cafe) {
@@ -59,7 +60,17 @@ export default function CafePage({ params }: { params: { id: string } }) {
             {cafe.instagram && <ContactPill href={`https://instagram.com/${cafe.instagram.replace('@', '')}`} label={cafe.instagram} icon="M4 8a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M17 7h0" />}
             {cafe.phone && <ContactPill href={`tel:${cafe.phone}`} label={cafe.phone} icon="M4 5a2 2 0 0 1 2-2h2l2 5-2 1a11 11 0 0 0 5 5l1-2 5 2v2a2 2 0 0 1-2 2A16 16 0 0 1 4 5z" />}
           </div>
-          {cafe.address && <p className="mt-2 font-mono text-xs text-coffee/55">{cafe.address}</p>}
+          {cafe.address && (
+            <button
+              onClick={() => setDirectionsPrompt(true)}
+              className="mt-2 flex items-center gap-1 font-mono text-xs text-coffee/55 underline decoration-dotted underline-offset-2"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 fill-none stroke-current" strokeWidth={1.6}>
+                <path d="M12 21s7-7.58 7-12A7 7 0 1 0 5 9c0 4.42 7 12 7 12z M12 11.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {cafe.address}
+            </button>
+          )}
         </div>
 
         <div className="mt-4">
@@ -149,6 +160,26 @@ export default function CafePage({ params }: { params: { id: string } }) {
 
       <Modal open={authPrompt} onClose={() => setAuthPrompt(false)} title="Join Where's Joe?">
         <SignInPrompt message="Log in to save cafés, stamp your passport, and post to the community." />
+      </Modal>
+
+      <Modal open={directionsPrompt} onClose={() => setDirectionsPrompt(false)} title="Get directions">
+        <p className="mb-4 text-sm text-coffee/70">Open {cafe.name} in:</p>
+        <div className="flex flex-col gap-2">
+          <a
+            href={`https://maps.apple.com/?daddr=${cafe.lat},${cafe.lng}&q=${encodeURIComponent(cafe.name)}`}
+            target="_blank" rel="noreferrer" onClick={() => setDirectionsPrompt(false)}
+            className="block w-full rounded-pill border border-racing-200 px-4 py-2.5 text-center font-mono text-sm font-medium text-racing-700 transition-colors hover:bg-racing-50"
+          >
+            Apple Maps
+          </a>
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${cafe.lat},${cafe.lng}`}
+            target="_blank" rel="noreferrer" onClick={() => setDirectionsPrompt(false)}
+            className="block w-full rounded-pill border border-racing-200 px-4 py-2.5 text-center font-mono text-sm font-medium text-racing-700 transition-colors hover:bg-racing-50"
+          >
+            Google Maps
+          </a>
+        </div>
       </Modal>
     </div>
   );
