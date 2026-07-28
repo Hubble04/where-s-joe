@@ -59,6 +59,7 @@ export interface StoreValue {
   approveSuggestion: (id: string, coords: { lat: number; lng: number }) => void;
   rejectSuggestion: (id: string) => void;
   deletePost: (id: string) => void;
+  setCafeStatus: (cafeId: string, status: Cafe['status']) => void;
 }
 
 export const StoreContext = createContext<StoreValue | null>(null);

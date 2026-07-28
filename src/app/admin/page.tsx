@@ -3,9 +3,10 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
-import type { SuggestedCafe } from '@/lib/types';
+import type { SuggestedCafe, Cafe } from '@/lib/types';
 import { SectionTitle, EmptyState, Chip } from '@/components/ui';
 import { Button } from '@/components/Button';
+import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { timeAgo } from '@/lib/utils';
 
 const TABS = ['Suggestions', 'Posts', 'Cafés', 'Users'] as const;
@@ -39,6 +40,8 @@ export default function AdminPage() {
   }
 
   const pending = suggestions.filter((s) => s.moderationStatus === 'pending');
+  const cafesNeedingReview = cafes.filter((c) => c.status !== 'approved');
+  const publishedCafes = cafes.filter((c) => c.status === 'approved');
 
   return (
     <div className="px-4 py-4">
@@ -53,7 +56,12 @@ export default function AdminPage() {
       </div>
 
       <div className="rail mb-4">
-        {TABS.map((t) => <Chip key={t} label={t === 'Suggestions' ? `Suggestions${pending.length ? ` (${pending.length})` : ''}` : t} active={tab === t} onClick={() => setTab(t)} />)}
+        {TABS.map((t) => {
+          let label: string = t;
+          if (t === 'Suggestions' && pending.length) label = `Suggestions (${pending.length})`;
+          if (t === 'Cafés' && cafesNeedingReview.length) label = `Cafés (${cafesNeedingReview.length})`;
+          return <Chip key={t} label={label} active={tab === t} onClick={() => setTab(t)} />;
+        })}
       </div>
 
       {tab === 'Suggestions' && (
@@ -84,16 +92,29 @@ export default function AdminPage() {
       )}
 
       {tab === 'Cafés' && (
-        <div className="space-y-2">
-          {cafes.map((c) => (
-            <Link key={c.id} href={`/cafe/${c.id}`} className="flex items-center justify-between gap-2 rounded-card bg-ivory p-3 shadow-card">
-              <div className="min-w-0">
-                <p className="truncate font-display text-lg text-racing-700">{c.name}</p>
-                <p className="font-mono text-[0.65rem] text-coffee/50">{c.neighborhood} · {c.city}, {c.state}</p>
+        <div>
+          {cafesNeedingReview.length > 0 && (
+            <div className="mb-5">
+              <SectionTitle eyebrow="Imported, not sure yet" title="Needs review" />
+              <p className="-mt-2 mb-3 font-mono text-[0.65rem] text-coffee/50">
+                Hidden from Explore and search until you publish them.
+              </p>
+              <div className="space-y-2">
+                {cafesNeedingReview.map((c) => <CafeReviewCard key={c.id} cafe={c} />)}
               </div>
-              {c.verifiedByJoe && <span className="shrink-0 rounded-pill bg-racing-600/15 px-2 py-0.5 font-mono text-[0.6rem] text-racing-700">Verified</span>}
-            </Link>
-          ))}
+            </div>
+          )}
+          <div className="space-y-2">
+            {publishedCafes.map((c) => (
+              <Link key={c.id} href={`/cafe/${c.id}`} className="flex items-center justify-between gap-2 rounded-card bg-ivory p-3 shadow-card">
+                <div className="min-w-0">
+                  <p className="truncate font-display text-lg text-racing-700">{c.name}</p>
+                  <p className="font-mono text-[0.65rem] text-coffee/50">{c.neighborhood} · {c.city}, {c.state}</p>
+                </div>
+                {c.verifiedByJoe && <span className="shrink-0 rounded-pill bg-racing-600/15 px-2 py-0.5 font-mono text-[0.6rem] text-racing-700">Verified</span>}
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 
@@ -119,6 +140,23 @@ function Stat({ label, value }: { label: string; value: number }) {
     <div className="rounded-card bg-parchment px-2 py-3 text-center">
       <div className="font-display text-xl text-racing-700">{value}</div>
       <div className="font-mono text-[0.6rem] text-coffee/55">{label}</div>
+    </div>
+  );
+}
+
+function CafeReviewCard({ cafe }: { cafe: Cafe }) {
+  const { setCafeStatus } = useStore();
+  return (
+    <div className="flex items-center gap-3 rounded-card border border-amber/30 bg-amber/5 p-3">
+      <ImageWithFallback src={cafe.coverPhotoUrl} alt={cafe.name} seed={cafe.name} className="h-14 w-14 shrink-0 rounded-xl" />
+      <div className="min-w-0 flex-1">
+        <Link href={`/cafe/${cafe.id}`} className="block truncate font-display text-lg text-racing-700 hover:underline">{cafe.name}</Link>
+        <p className="truncate font-mono text-[0.65rem] text-coffee/50">{cafe.neighborhood} · {cafe.city}, {cafe.state}</p>
+      </div>
+      <div className="flex shrink-0 gap-1.5">
+        <Button size="sm" onClick={() => setCafeStatus(cafe.id, 'approved')}>Publish</Button>
+        <Button variant="danger" size="sm" onClick={() => setCafeStatus(cafe.id, 'rejected')}>Remove</Button>
+      </div>
     </div>
   );
 }

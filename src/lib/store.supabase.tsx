@@ -466,6 +466,13 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     });
   }, [supabase, loadPosts]);
 
+  const setCafeStatus = useCallback((cafeId: string, status: Cafe['status']) => {
+    setCafes((prev) => prev.map((c) => (c.id === cafeId ? { ...c, status } : c)));
+    supabase.from('cafes').update({ status }).eq('id', cafeId).then(({ error }: any) => {
+      if (error) { console.error(error); loadCafes(); }
+    });
+  }, [supabase, loadCafes]);
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: profiles, cafes,
     posts: postsOut, comments, saves: mySaves, lists: myLists,
@@ -476,7 +483,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     signIn, signUp, signOut, updateProfile,
     toggleLike, addComment, toggleFollow, createPost,
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
-    approveSuggestion, rejectSuggestion, deletePost,
+    approveSuggestion, rejectSuggestion, deletePost, setCafeStatus,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

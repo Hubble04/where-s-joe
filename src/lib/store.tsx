@@ -314,6 +314,10 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, removedPostIds: [...p.removedPostIds, id] }));
   }, []);
 
+  const setCafeStatus = useCallback((cafeId: string, status: Cafe['status']) => {
+    setS((p) => ({ ...p, cafeStatusOverrides: { ...p.cafeStatusOverrides, [cafeId]: status } }));
+  }, []);
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: allUsers, cafes: allCafes,
     posts: visiblePosts, comments: s.comments, saves: s.saves, lists: s.lists,
@@ -324,7 +328,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     signIn, signUp, signOut, updateProfile,
     toggleLike, addComment, toggleFollow, createPost,
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
-    approveSuggestion, rejectSuggestion, deletePost,
+    approveSuggestion, rejectSuggestion, deletePost, setCafeStatus,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
