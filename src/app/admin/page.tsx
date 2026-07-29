@@ -40,7 +40,7 @@ export default function AdminPage() {
   }
 
   const pending = suggestions.filter((s) => s.moderationStatus === 'pending');
-  const cafesNeedingReview = cafes.filter((c) => c.status !== 'approved');
+  const cafesNeedingReview = cafes.filter((c) => c.status === 'pending');
   const publishedCafes = cafes.filter((c) => c.status === 'approved');
 
   return (
