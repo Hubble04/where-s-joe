@@ -5,7 +5,7 @@ import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
 import type { SuggestedCafe, Cafe } from '@/lib/types';
 import { TAG_CATEGORY, ESTABLISHMENT_TYPES } from '@/lib/brand';
-import { SectionTitle, EmptyState, Chip } from '@/components/ui';
+import { SectionTitle, EmptyState, Chip, SearchBar } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { timeAgo } from '@/lib/utils';
@@ -16,6 +16,7 @@ type Tab = typeof TABS[number];
 export default function AdminPage() {
   const { me, suggestions, approveSuggestion, rejectSuggestion, posts, deletePost, cafes, users, getUser } = useStore();
   const [tab, setTab] = useState<Tab>('Suggestions');
+  const [cafeQuery, setCafeQuery] = useState('');
 
   if (!me || me.role !== 'admin') {
     return (
@@ -41,8 +42,10 @@ export default function AdminPage() {
   }
 
   const pending = suggestions.filter((s) => s.moderationStatus === 'pending');
-  const cafesNeedingReview = cafes.filter((c) => c.status === 'pending');
-  const publishedCafes = cafes.filter((c) => c.status === 'approved');
+  const q = cafeQuery.trim().toLowerCase();
+  const matchesQuery = (c: Cafe) => !q || [c.name, c.city, c.state, c.neighborhood].join(' ').toLowerCase().includes(q);
+  const cafesNeedingReview = cafes.filter((c) => c.status === 'pending' && matchesQuery(c));
+  const publishedCafes = cafes.filter((c) => c.status === 'approved' && matchesQuery(c));
 
   return (
     <div className="px-4 py-4">
@@ -94,6 +97,9 @@ export default function AdminPage() {
 
       {tab === 'Cafés' && (
         <div>
+          <div className="mb-4">
+            <SearchBar value={cafeQuery} onChange={setCafeQuery} placeholder="Search by name, city, or neighborhood…" />
+          </div>
           {cafesNeedingReview.length > 0 && (
             <div className="mb-5">
               <SectionTitle eyebrow="Imported, not sure yet" title="Needs review" />
@@ -105,9 +111,13 @@ export default function AdminPage() {
               </div>
             </div>
           )}
-          <div className="space-y-2">
-            {publishedCafes.map((c) => <PublishedCafeRow key={c.id} cafe={c} />)}
-          </div>
+          {cafesNeedingReview.length === 0 && publishedCafes.length === 0 ? (
+            <EmptyState title="No matches" body="Try a different name, city, or neighborhood." />
+          ) : (
+            <div className="space-y-2">
+              {publishedCafes.map((c) => <PublishedCafeRow key={c.id} cafe={c} />)}
+            </div>
+          )}
         </div>
       )}
 
