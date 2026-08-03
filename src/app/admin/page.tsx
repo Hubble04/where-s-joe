@@ -106,18 +106,7 @@ export default function AdminPage() {
             </div>
           )}
           <div className="space-y-2">
-            {publishedCafes.map((c) => (
-              <div key={c.id} className="flex items-center justify-between gap-2 rounded-card bg-ivory p-3 shadow-card">
-                <Link href={`/cafe/${c.id}`} className="min-w-0 flex-1">
-                  <p className="truncate font-display text-lg text-racing-700">{c.name}</p>
-                  <p className="font-mono text-[0.65rem] text-coffee/50">{c.neighborhood} · {c.city}, {c.state}</p>
-                </Link>
-                <div className="flex shrink-0 items-center gap-2">
-                  {c.verifiedByJoe && <span className="rounded-pill bg-racing-600/15 px-2 py-0.5 font-mono text-[0.6rem] text-racing-700">Verified</span>}
-                  <EstablishmentTypeSelect cafe={c} />
-                </div>
-              </div>
-            ))}
+            {publishedCafes.map((c) => <PublishedCafeRow key={c.id} cafe={c} />)}
           </div>
         </div>
       )}
@@ -165,6 +154,25 @@ function CafeReviewCard({ cafe }: { cafe: Cafe }) {
           <Button size="sm" onClick={() => setCafeStatus(cafe.id, 'approved')}>Publish</Button>
           <Button variant="danger" size="sm" onClick={() => setCafeStatus(cafe.id, 'rejected')}>Remove</Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PublishedCafeRow({ cafe }: { cafe: Cafe }) {
+  const { setCafeStatus } = useStore();
+  return (
+    <div className="rounded-card bg-ivory p-3 shadow-card">
+      <div className="flex items-center justify-between gap-2">
+        <Link href={`/cafe/${cafe.id}`} className="min-w-0 flex-1">
+          <p className="truncate font-display text-lg text-racing-700">{cafe.name}</p>
+          <p className="font-mono text-[0.65rem] text-coffee/50">{cafe.neighborhood} · {cafe.city}, {cafe.state}</p>
+        </Link>
+        {cafe.verifiedByJoe && <span className="shrink-0 rounded-pill bg-racing-600/15 px-2 py-0.5 font-mono text-[0.6rem] text-racing-700">Verified</span>}
+      </div>
+      <div className="mt-2.5 flex items-center justify-between gap-2">
+        <EstablishmentTypeSelect cafe={cafe} />
+        <Button variant="danger" size="sm" onClick={() => setCafeStatus(cafe.id, 'rejected')}>Remove</Button>
       </div>
     </div>
   );
