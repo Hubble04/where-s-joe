@@ -6,7 +6,7 @@ import {
 } from 'react';
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
-  SaveType, Visibility, WeekHours,
+  SaveType, Visibility, WeekHours, CafeEditSuggestion, EditReason,
 } from './types';
 import { getSupabaseBrowser } from './supabase/client';
 import { StoreContext, type StoreValue } from './storeContext';
@@ -72,6 +72,13 @@ function rowToSuggestion(r: any): SuggestedCafe {
   };
 }
 
+function rowToEditSuggestion(r: any): CafeEditSuggestion {
+  return {
+    id: r.id, cafeId: r.cafe_id, submittedBy: r.submitted_by, reason: r.reason,
+    details: r.details ?? '', status: r.status, createdAt: r.created_at,
+  };
+}
+
 const FALLBACK_USER: Omit<Profile, 'id'> = {
   name: 'Unknown', username: 'unknown', bio: '', profilePhotoUrl: '', location: '',
   role: 'user', createdAt: new Date().toISOString(),
@@ -94,6 +101,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const [mySaves, setMySaves] = useState<CafeSave[]>([]);
   const [myLists, setMyLists] = useState<CustomList[]>([]);
   const [suggestions, setSuggestions] = useState<SuggestedCafe[]>([]);
+  const [editSuggestions, setEditSuggestions] = useState<CafeEditSuggestion[]>([]);
 
   // --- loaders ---------------------------------------------------------
   const loadProfiles = useCallback(async () => {
@@ -150,6 +158,12 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     setSuggestions((data ?? []).map(rowToSuggestion));
   }, [supabase]);
 
+  const loadEditSuggestions = useCallback(async () => {
+    const { data, error } = await supabase.from('cafe_edit_suggestions').select('*').order('created_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    setEditSuggestions((data ?? []).map(rowToEditSuggestion));
+  }, [supabase]);
+
   const loadMySaves = useCallback(async (userId: string) => {
     const { data, error } = await supabase.from('user_cafe_saves').select('*').eq('user_id', userId);
     if (error) { console.error(error); return; }
@@ -193,7 +207,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     let alive = true;
     (async () => {
       await Promise.all([
-        loadProfiles(), loadCafes(), loadPosts(), loadFollows(), loadSuggestions(),
+        loadProfiles(), loadCafes(), loadPosts(), loadFollows(), loadSuggestions(), loadEditSuggestions(),
         meId ? loadMySaves(meId) : Promise.resolve(setMySaves([])),
         meId ? loadMyLists(meId) : Promise.resolve(setMyLists([])),
       ]);
@@ -224,6 +238,15 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const suggestionsOut = useMemo<SuggestedCafe[]>(
     () => suggestions.map((s) => ({ ...s, submitterName: profiles.find((p) => p.id === s.submittedBy)?.name })),
     [suggestions, profiles],
+  );
+
+  const editSuggestionsOut = useMemo<CafeEditSuggestion[]>(
+    () => editSuggestions.map((s) => ({
+      ...s,
+      cafeName: cafes.find((c) => c.id === s.cafeId)?.name,
+      submitterName: s.submittedBy ? profiles.find((p) => p.id === s.submittedBy)?.name : undefined,
+    })),
+    [editSuggestions, cafes, profiles],
   );
 
   const getUser = useCallback((id: string) => profiles.find((p) => p.id === id) ?? { ...FALLBACK_USER, id }, [profiles]);
@@ -490,10 +513,32 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [supabase, loadCafes]);
 
+  const submitEditSuggestion = useCallback((cafeId: string, reason: EditReason, details?: string) => {
+    if (!meId) return;
+    const tempId = 'tmp-' + uid();
+    setEditSuggestions((prev) => [
+      { id: tempId, cafeId, submittedBy: meId, reason, details: details ?? '', status: 'pending', createdAt: new Date().toISOString() },
+      ...prev,
+    ]);
+    supabase.from('cafe_edit_suggestions').insert({
+      cafe_id: cafeId, submitted_by: meId, reason, details: details ?? '',
+    }).select().single().then(({ data, error }: any) => {
+      if (error) { console.error(error); setEditSuggestions((prev) => prev.filter((s) => s.id !== tempId)); }
+      else if (data) setEditSuggestions((prev) => prev.map((s) => (s.id === tempId ? rowToEditSuggestion(data) : s)));
+    });
+  }, [meId, supabase]);
+
+  const resolveEditSuggestion = useCallback((id: string) => {
+    setEditSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, status: 'resolved' } : s)));
+    supabase.from('cafe_edit_suggestions').update({ status: 'resolved' }).eq('id', id).then(({ error }: any) => {
+      if (error) { console.error(error); loadEditSuggestions(); }
+    });
+  }, [supabase, loadEditSuggestions]);
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: profiles, cafes,
     posts: postsOut, comments, saves: mySaves, lists: myLists,
-    suggestions: suggestionsOut, follows,
+    suggestions: suggestionsOut, editSuggestions: editSuggestionsOut, follows,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe,
@@ -501,6 +546,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     toggleLike, addComment, toggleFollow, createPost,
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
     approveSuggestion, rejectSuggestion, deletePost, setCafeStatus, setEstablishmentType,
+    submitEditSuggestion, resolveEditSuggestion,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

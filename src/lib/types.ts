@@ -142,3 +142,22 @@ export interface SuggestedCafe {
   createdAt: string;
   submitterName?: string;
 }
+
+export const EDIT_REASONS = [
+  'Not a coffee shop', 'Permanently closed', 'Wrong address', 'Wrong hours',
+  'Duplicate listing', 'Incorrect photos', 'Incorrect establishment type', 'Other',
+] as const;
+export type EditReason = typeof EDIT_REASONS[number];
+
+export interface CafeEditSuggestion {
+  id: string;
+  cafeId: string;
+  submittedBy: string | null;
+  reason: EditReason;
+  details: string;
+  status: 'pending' | 'resolved';
+  createdAt: string;
+  // joined
+  cafeName?: string;
+  submitterName?: string;
+}

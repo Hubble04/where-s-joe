@@ -172,6 +172,24 @@ create table if not exists public.suggested_cafes (
 );
 create index if not exists suggested_status_idx on public.suggested_cafes (moderation_status);
 
+-- ---------------------------------------------------------------------------
+-- cafe_edit_suggestions  (user-reported corrections on an existing café)
+-- ---------------------------------------------------------------------------
+create table if not exists public.cafe_edit_suggestions (
+  id           uuid primary key default gen_random_uuid(),
+  cafe_id      uuid not null references public.cafes (id) on delete cascade,
+  submitted_by uuid references auth.users (id) on delete set null,
+  reason       text not null check (reason in (
+    'Not a coffee shop', 'Permanently closed', 'Wrong address', 'Wrong hours',
+    'Duplicate listing', 'Incorrect photos', 'Incorrect establishment type', 'Other'
+  )),
+  details      text default '',
+  status       text not null default 'pending' check (status in ('pending','resolved')),
+  created_at   timestamptz not null default now()
+);
+create index if not exists cafe_edit_suggestions_cafe_idx on public.cafe_edit_suggestions (cafe_id);
+create index if not exists cafe_edit_suggestions_status_idx on public.cafe_edit_suggestions (status);
+
 -- =========================================================================
 -- Helper: is the current user an admin?
 -- =========================================================================
@@ -200,6 +218,7 @@ alter table public.user_cafe_saves   enable row level security;
 alter table public.custom_lists      enable row level security;
 alter table public.custom_list_items enable row level security;
 alter table public.suggested_cafes   enable row level security;
+alter table public.cafe_edit_suggestions enable row level security;
 
 -- profiles: world-readable; self-write; admins may update (e.g. grant roles).
 drop policy if exists p_profiles_read on public.profiles;
@@ -314,6 +333,20 @@ create policy p_sugg_write on public.suggested_cafes for insert to authenticated
 drop policy if exists p_sugg_admin on public.suggested_cafes;
 create policy p_sugg_admin on public.suggested_cafes for update to authenticated
   using (public.is_admin()) with check (public.is_admin());
+
+-- cafe_edit_suggestions: submitter sees/writes own; admin sees/manages all.
+drop policy if exists p_edits_read on public.cafe_edit_suggestions;
+create policy p_edits_read on public.cafe_edit_suggestions for select to authenticated
+  using (submitted_by = auth.uid() or public.is_admin());
+drop policy if exists p_edits_write on public.cafe_edit_suggestions;
+create policy p_edits_write on public.cafe_edit_suggestions for insert to authenticated
+  with check (submitted_by = auth.uid());
+drop policy if exists p_edits_admin on public.cafe_edit_suggestions;
+create policy p_edits_admin on public.cafe_edit_suggestions for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+drop policy if exists p_edits_delete on public.cafe_edit_suggestions;
+create policy p_edits_delete on public.cafe_edit_suggestions for delete to authenticated
+  using (public.is_admin());
 
 -- =========================================================================
 -- Auto-create a profile row on signup (username from metadata or email)

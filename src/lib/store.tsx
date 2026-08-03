@@ -6,7 +6,7 @@ import {
 } from 'react';
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
-  SaveType, Visibility,
+  SaveType, Visibility, CafeEditSuggestion, EditReason,
 } from './types';
 import {
   MOCK_CAFES, MOCK_USERS, MOCK_ME, MOCK_POSTS, MOCK_COMMENTS, MOCK_FOLLOWS,
@@ -33,6 +33,7 @@ interface Persisted {
   saves: CafeSave[];
   lists: CustomList[];
   suggestions: SuggestedCafe[];
+  editSuggestions: CafeEditSuggestion[];
   removedPostIds: string[];
   cafeStatusOverrides: Record<string, Cafe['status']>;
   cafeEstablishmentOverrides: Record<string, string>;
@@ -71,6 +72,7 @@ function defaultState(): Persisted {
     suggestions: [
       { id: 'sg1', submittedBy: 'u-mara', name: 'Wildflower Coffee Co.', address: '900 W 10th St', city: 'Austin', state: 'TX', country: 'USA', description: 'New spot near downtown with a great patio.', moderationStatus: 'pending', createdAt: nowISO(), submitterName: 'Mara Ellison', tags: ['Outdoor Seating', 'Wi-Fi'] },
     ],
+    editSuggestions: [],
     removedPostIds: [],
     cafeStatusOverrides: {},
     cafeEstablishmentOverrides: {},
@@ -331,10 +333,23 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, cafeEstablishmentOverrides: { ...p.cafeEstablishmentOverrides, [cafeId]: type } }));
   }, []);
 
+  const submitEditSuggestion = useCallback((cafeId: string, reason: EditReason, details?: string) => {
+    if (!me) return;
+    const sug: CafeEditSuggestion = {
+      id: uid(), cafeId, submittedBy: me.id, reason, details: details ?? '',
+      status: 'pending', createdAt: nowISO(),
+    };
+    setS((p) => ({ ...p, editSuggestions: [sug, ...p.editSuggestions] }));
+  }, [me]);
+
+  const resolveEditSuggestion = useCallback((id: string) => {
+    setS((p) => ({ ...p, editSuggestions: p.editSuggestions.map((x) => x.id === id ? { ...x, status: 'resolved' } : x) }));
+  }, []);
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: allUsers, cafes: allCafes,
     posts: visiblePosts, comments: s.comments, saves: s.saves, lists: s.lists,
-    suggestions: s.suggestions, follows: s.follows,
+    suggestions: s.suggestions, editSuggestions: s.editSuggestions, follows: s.follows,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe,
@@ -342,6 +357,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     toggleLike, addComment, toggleFollow, createPost,
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
     approveSuggestion, rejectSuggestion, deletePost, setCafeStatus, setEstablishmentType,
+    submitEditSuggestion, resolveEditSuggestion,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

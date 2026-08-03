@@ -4,20 +4,26 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { TAG_CATEGORY } from '@/lib/brand';
-import { groupTags, openLabel } from '@/lib/utils';
+import { EDIT_REASONS, type EditReason } from '@/lib/types';
+import { groupTags, openLabel, cn } from '@/lib/utils';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { Rating, VerifiedBadge } from '@/components/Badge';
 import { SaveActions } from '@/components/SaveActions';
 import { MapView } from '@/components/MapView';
 import { PostCard } from '@/components/PostCard';
+import { Button } from '@/components/Button';
 import { SectionTitle, SignInPrompt, Modal } from '@/components/ui';
 
 export default function CafePage({ params }: { params: { id: string } }) {
   const { id } = params;
   const router = useRouter();
-  const { getCafe, postsForCafe, savesForCafe } = useStore();
+  const { me, getCafe, postsForCafe, savesForCafe, submitEditSuggestion } = useStore();
   const [authPrompt, setAuthPrompt] = useState(false);
   const [directionsPrompt, setDirectionsPrompt] = useState(false);
+  const [editPrompt, setEditPrompt] = useState(false);
+  const [editReason, setEditReason] = useState<EditReason | null>(null);
+  const [editDetails, setEditDetails] = useState('');
+  const [editSent, setEditSent] = useState(false);
   const cafe = getCafe(id);
 
   if (!cafe) {
@@ -156,10 +162,65 @@ export default function CafePage({ params }: { params: { id: string } }) {
           <SectionTitle eyebrow="Find it" title="Location" />
           <MapView cafes={[cafe]} className="h-56 w-full" />
         </section>
+
+        <button
+          onClick={() => (me ? setEditPrompt(true) : setAuthPrompt(true))}
+          className="mt-8 w-full rounded-pill border border-racing-100 px-4 py-2.5 text-center font-mono text-xs text-coffee/55 transition-colors hover:border-racing-300 hover:text-coffee/80"
+        >
+          Suggest an Edit
+        </button>
       </div>
 
       <Modal open={authPrompt} onClose={() => setAuthPrompt(false)} title="Join Where's Joe?">
         <SignInPrompt message="Log in to save cafés, stamp your passport, and post to the community." />
+      </Modal>
+
+      <Modal
+        open={editPrompt}
+        onClose={() => { setEditPrompt(false); setEditReason(null); setEditDetails(''); setEditSent(false); }}
+        title="Suggest an Edit"
+      >
+        {editSent ? (
+          <div className="py-4 text-center">
+            <p className="font-heading text-base text-racing-700">Thanks for the tip!</p>
+            <p className="mt-1 font-mono text-xs text-coffee/60">Joe&rsquo;s team will take a look.</p>
+          </div>
+        ) : (
+          <>
+            <p className="mb-4 text-sm text-coffee/70">What&rsquo;s wrong with {cafe.name}?</p>
+            <div className="mb-4 flex flex-col gap-1.5">
+              {EDIT_REASONS.map((reason) => (
+                <button
+                  key={reason}
+                  onClick={() => setEditReason(reason)}
+                  className={cn(
+                    'rounded-xl border px-3 py-2.5 text-left font-mono text-xs transition-colors',
+                    editReason === reason ? 'border-racing-600 bg-racing-600 text-ivory' : 'border-racing-100 text-coffee/70 hover:border-racing-300',
+                  )}
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <label className="mb-1 block font-mono text-xs text-coffee/60">Details (optional)</label>
+            <textarea
+              value={editDetails} onChange={(e) => setEditDetails(e.target.value)}
+              placeholder="Anything else that would help us fix this?"
+              rows={3}
+              className="mb-5 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-racing-600"
+            />
+            <Button
+              variant="primary" className="w-full" disabled={!editReason}
+              onClick={() => {
+                if (!editReason) return;
+                submitEditSuggestion(cafe.id, editReason, editDetails.trim() || undefined);
+                setEditSent(true);
+              }}
+            >
+              Submit
+            </Button>
+          </>
+        )}
       </Modal>
 
       <Modal open={directionsPrompt} onClose={() => setDirectionsPrompt(false)} title="Get directions">

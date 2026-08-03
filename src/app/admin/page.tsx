@@ -3,18 +3,18 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
-import type { SuggestedCafe, Cafe } from '@/lib/types';
+import type { SuggestedCafe, Cafe, CafeEditSuggestion } from '@/lib/types';
 import { TAG_CATEGORY, ESTABLISHMENT_TYPES } from '@/lib/brand';
 import { SectionTitle, EmptyState, Chip, SearchBar } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { timeAgo } from '@/lib/utils';
 
-const TABS = ['Suggestions', 'Posts', 'Cafés', 'Users'] as const;
+const TABS = ['Suggestions', 'Edit Reports', 'Posts', 'Cafés', 'Users'] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminPage() {
-  const { me, suggestions, approveSuggestion, rejectSuggestion, posts, deletePost, cafes, users, getUser } = useStore();
+  const { me, suggestions, approveSuggestion, rejectSuggestion, posts, deletePost, cafes, users, getUser, editSuggestions, resolveEditSuggestion } = useStore();
   const [tab, setTab] = useState<Tab>('Suggestions');
   const [cafeQuery, setCafeQuery] = useState('');
 
@@ -42,6 +42,7 @@ export default function AdminPage() {
   }
 
   const pending = suggestions.filter((s) => s.moderationStatus === 'pending');
+  const pendingEdits = editSuggestions.filter((s) => s.status === 'pending');
   const q = cafeQuery.trim().toLowerCase();
   const matchesQuery = (c: Cafe) => !q || [c.name, c.city, c.state, c.neighborhood].join(' ').toLowerCase().includes(q);
   const cafesNeedingReview = cafes.filter((c) => c.status === 'pending' && matchesQuery(c));
@@ -52,8 +53,9 @@ export default function AdminPage() {
       <p className="eyebrow mb-1">Moderation</p>
       <h1 className="mb-4 font-display text-3xl text-racing-700">Admin</h1>
 
-      <div className="mb-4 grid grid-cols-4 gap-2">
+      <div className="mb-4 grid grid-cols-5 gap-2">
         <Stat label="Pending" value={pending.length} />
+        <Stat label="Reports" value={pendingEdits.length} />
         <Stat label="Posts" value={posts.length} />
         <Stat label="Cafés" value={cafes.length} />
         <Stat label="Users" value={users.length} />
@@ -63,6 +65,7 @@ export default function AdminPage() {
         {TABS.map((t) => {
           let label: string = t;
           if (t === 'Suggestions' && pending.length) label = `Suggestions (${pending.length})`;
+          if (t === 'Edit Reports' && pendingEdits.length) label = `Edit Reports (${pendingEdits.length})`;
           if (t === 'Cafés' && cafesNeedingReview.length) label = `Cafés (${cafesNeedingReview.length})`;
           return <Chip key={t} label={label} active={tab === t} onClick={() => setTab(t)} />;
         })}
@@ -72,6 +75,14 @@ export default function AdminPage() {
         pending.length === 0 ? <EmptyState title="Queue is clear" body="No café suggestions awaiting review." /> : (
           <div className="space-y-3">
             {pending.map((s) => <PendingSuggestionCard key={s.id} suggestion={s} />)}
+          </div>
+        )
+      )}
+
+      {tab === 'Edit Reports' && (
+        pendingEdits.length === 0 ? <EmptyState title="Queue is clear" body="No edit reports awaiting review." /> : (
+          <div className="space-y-2">
+            {pendingEdits.map((s) => <EditReportCard key={s.id} suggestion={s} />)}
           </div>
         )
       )}
@@ -200,6 +211,30 @@ function EstablishmentTypeSelect({ cafe }: { cafe: Cafe }) {
       <option value="">Uncategorized</option>
       {ESTABLISHMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
     </select>
+  );
+}
+
+function EditReportCard({ suggestion: s }: { suggestion: CafeEditSuggestion }) {
+  const { resolveEditSuggestion } = useStore();
+  return (
+    <div className="rounded-card bg-ivory p-3 shadow-card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {s.cafeName ? (
+            <Link href={`/cafe/${s.cafeId}`} className="block truncate font-display text-lg text-racing-700 hover:underline">{s.cafeName}</Link>
+          ) : (
+            <p className="truncate font-display text-lg text-racing-700">Unknown café</p>
+          )}
+          <span className="mt-0.5 inline-block rounded-pill bg-amber/15 px-2 py-0.5 font-mono text-[0.65rem] text-amber-dark">{s.reason}</span>
+        </div>
+        <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(s.createdAt)}</span>
+      </div>
+      {s.details && <p className="mt-2 text-sm text-coffee/80">{s.details}</p>}
+      <p className="mt-2 font-mono text-[0.65rem] text-coffee/45">Reported by {s.submitterName || 'a member'}</p>
+      <div className="mt-3">
+        <Button size="sm" onClick={() => resolveEditSuggestion(s.id)}>Mark Resolved</Button>
+      </div>
+    </div>
   );
 }
 
