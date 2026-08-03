@@ -10,6 +10,7 @@ import type {
 } from './types';
 import { getSupabaseBrowser } from './supabase/client';
 import { StoreContext, type StoreValue } from './storeContext';
+import { TAG_CATEGORY } from './brand';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -473,6 +474,22 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     });
   }, [supabase, loadCafes]);
 
+  const setEstablishmentType = useCallback((cafeId: string, type: string) => {
+    setCafes((prev) => prev.map((c) => {
+      if (c.id !== cafeId) return c;
+      const otherTags = c.tags.filter((t) => TAG_CATEGORY[t] !== 'Type of Establishment');
+      return { ...c, tags: type ? [...otherTags, type] : otherTags };
+    }));
+    (async () => {
+      const { error: delErr } = await supabase.from('cafe_tags').delete().eq('cafe_id', cafeId).eq('category', 'Type of Establishment');
+      if (delErr) { console.error(delErr); loadCafes(); return; }
+      if (type) {
+        const { error: insErr } = await supabase.from('cafe_tags').insert({ cafe_id: cafeId, category: 'Type of Establishment', tag: type });
+        if (insErr) { console.error(insErr); loadCafes(); }
+      }
+    })();
+  }, [supabase, loadCafes]);
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: profiles, cafes,
     posts: postsOut, comments, saves: mySaves, lists: myLists,
@@ -483,7 +500,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     signIn, signUp, signOut, updateProfile,
     toggleLike, addComment, toggleFollow, createPost,
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
-    approveSuggestion, rejectSuggestion, deletePost, setCafeStatus,
+    approveSuggestion, rejectSuggestion, deletePost, setCafeStatus, setEstablishmentType,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

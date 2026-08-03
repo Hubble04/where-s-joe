@@ -60,6 +60,7 @@ export interface StoreValue {
   rejectSuggestion: (id: string) => void;
   deletePost: (id: string) => void;
   setCafeStatus: (cafeId: string, status: Cafe['status']) => void;
+  setEstablishmentType: (cafeId: string, type: string) => void;
 }
 
 export const StoreContext = createContext<StoreValue | null>(null);

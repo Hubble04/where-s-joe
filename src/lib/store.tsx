@@ -14,6 +14,7 @@ import {
 import { hasSupabase } from './env';
 import { StoreContext, type StoreValue } from './storeContext';
 import { SupabaseStoreProvider } from './store.supabase';
+import { TAG_CATEGORY } from './brand';
 
 export { useStore } from './storeContext';
 
@@ -34,6 +35,7 @@ interface Persisted {
   suggestions: SuggestedCafe[];
   removedPostIds: string[];
   cafeStatusOverrides: Record<string, Cafe['status']>;
+  cafeEstablishmentOverrides: Record<string, string>;
   extraCafes: Cafe[];
   profileOverrides: Record<string, Partial<Profile>>;
 }
@@ -71,6 +73,7 @@ function defaultState(): Persisted {
     ],
     removedPostIds: [],
     cafeStatusOverrides: {},
+    cafeEstablishmentOverrides: {},
     extraCafes: [],
     profileOverrides: {},
   };
@@ -104,9 +107,15 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
   const allCafes = useMemo(() => {
     const base = [...MOCK_CAFES, ...s.extraCafes];
     return base
-      .map((c) => ({ ...c, status: s.cafeStatusOverrides[c.id] ?? c.status }))
+      .map((c) => {
+        const establishment = s.cafeEstablishmentOverrides[c.id];
+        const tags = establishment
+          ? [...c.tags.filter((t) => TAG_CATEGORY[t] !== 'Type of Establishment'), establishment]
+          : c.tags;
+        return { ...c, status: s.cafeStatusOverrides[c.id] ?? c.status, tags };
+      })
       .filter((c) => c.status === 'approved');
-  }, [s.extraCafes, s.cafeStatusOverrides]);
+  }, [s.extraCafes, s.cafeStatusOverrides, s.cafeEstablishmentOverrides]);
 
   const me = useMemo(
     () => (s.currentUserId ? allUsers.find((u) => u.id === s.currentUserId) ?? null : null),
@@ -318,6 +327,10 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, cafeStatusOverrides: { ...p.cafeStatusOverrides, [cafeId]: status } }));
   }, []);
 
+  const setEstablishmentType = useCallback((cafeId: string, type: string) => {
+    setS((p) => ({ ...p, cafeEstablishmentOverrides: { ...p.cafeEstablishmentOverrides, [cafeId]: type } }));
+  }, []);
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: allUsers, cafes: allCafes,
     posts: visiblePosts, comments: s.comments, saves: s.saves, lists: s.lists,
@@ -328,7 +341,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     signIn, signUp, signOut, updateProfile,
     toggleLike, addComment, toggleFollow, createPost,
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
-    approveSuggestion, rejectSuggestion, deletePost, setCafeStatus,
+    approveSuggestion, rejectSuggestion, deletePost, setCafeStatus, setEstablishmentType,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
 import type { SuggestedCafe, Cafe } from '@/lib/types';
+import { TAG_CATEGORY, ESTABLISHMENT_TYPES } from '@/lib/brand';
 import { SectionTitle, EmptyState, Chip } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
@@ -106,13 +107,16 @@ export default function AdminPage() {
           )}
           <div className="space-y-2">
             {publishedCafes.map((c) => (
-              <Link key={c.id} href={`/cafe/${c.id}`} className="flex items-center justify-between gap-2 rounded-card bg-ivory p-3 shadow-card">
-                <div className="min-w-0">
+              <div key={c.id} className="flex items-center justify-between gap-2 rounded-card bg-ivory p-3 shadow-card">
+                <Link href={`/cafe/${c.id}`} className="min-w-0 flex-1">
                   <p className="truncate font-display text-lg text-racing-700">{c.name}</p>
                   <p className="font-mono text-[0.65rem] text-coffee/50">{c.neighborhood} · {c.city}, {c.state}</p>
+                </Link>
+                <div className="flex shrink-0 items-center gap-2">
+                  {c.verifiedByJoe && <span className="rounded-pill bg-racing-600/15 px-2 py-0.5 font-mono text-[0.6rem] text-racing-700">Verified</span>}
+                  <EstablishmentTypeSelect cafe={c} />
                 </div>
-                {c.verifiedByJoe && <span className="shrink-0 rounded-pill bg-racing-600/15 px-2 py-0.5 font-mono text-[0.6rem] text-racing-700">Verified</span>}
-              </Link>
+              </div>
             ))}
           </div>
         </div>
@@ -147,17 +151,37 @@ function Stat({ label, value }: { label: string; value: number }) {
 function CafeReviewCard({ cafe }: { cafe: Cafe }) {
   const { setCafeStatus } = useStore();
   return (
-    <div className="flex items-center gap-3 rounded-card border border-amber/30 bg-amber/5 p-3">
-      <ImageWithFallback src={cafe.coverPhotoUrl} alt={cafe.name} seed={cafe.name} className="h-14 w-14 shrink-0 rounded-xl" />
-      <div className="min-w-0 flex-1">
-        <Link href={`/cafe/${cafe.id}`} className="block truncate font-display text-lg text-racing-700 hover:underline">{cafe.name}</Link>
-        <p className="truncate font-mono text-[0.65rem] text-coffee/50">{cafe.neighborhood} · {cafe.city}, {cafe.state}</p>
+    <div className="rounded-card border border-amber/30 bg-amber/5 p-3">
+      <div className="flex items-center gap-3">
+        <ImageWithFallback src={cafe.coverPhotoUrl} alt={cafe.name} seed={cafe.name} className="h-14 w-14 shrink-0 rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <Link href={`/cafe/${cafe.id}`} className="block truncate font-display text-lg text-racing-700 hover:underline">{cafe.name}</Link>
+          <p className="truncate font-mono text-[0.65rem] text-coffee/50">{cafe.neighborhood} · {cafe.city}, {cafe.state}</p>
+        </div>
       </div>
-      <div className="flex shrink-0 gap-1.5">
-        <Button size="sm" onClick={() => setCafeStatus(cafe.id, 'approved')}>Publish</Button>
-        <Button variant="danger" size="sm" onClick={() => setCafeStatus(cafe.id, 'rejected')}>Remove</Button>
+      <div className="mt-2.5 flex items-center justify-between gap-2">
+        <EstablishmentTypeSelect cafe={cafe} />
+        <div className="flex shrink-0 gap-1.5">
+          <Button size="sm" onClick={() => setCafeStatus(cafe.id, 'approved')}>Publish</Button>
+          <Button variant="danger" size="sm" onClick={() => setCafeStatus(cafe.id, 'rejected')}>Remove</Button>
+        </div>
       </div>
     </div>
+  );
+}
+
+function EstablishmentTypeSelect({ cafe }: { cafe: Cafe }) {
+  const { setEstablishmentType } = useStore();
+  const current = cafe.tags.find((t) => TAG_CATEGORY[t] === 'Type of Establishment') ?? '';
+  return (
+    <select
+      value={current}
+      onChange={(e) => setEstablishmentType(cafe.id, e.target.value)}
+      className="min-w-0 shrink rounded-pill border border-racing-100 bg-ivory px-2.5 py-1 font-mono text-[0.65rem] text-coffee/80 focus:outline-none focus:ring-2 focus:ring-racing-600"
+    >
+      <option value="">Uncategorized</option>
+      {ESTABLISHMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+    </select>
   );
 }
 

@@ -79,11 +79,14 @@ export const TAG_TAXONOMY: { category: string; tags: string[] }[] = [
   {
     category: 'Type of Establishment',
     tags: [
-      'Brick & Mortar Café', 'Coffee Truck', 'Coffee Stand', 'Coffee Cart',
-      'Café & Bar', 'Roastery', 'Pop-Up',
+      'Brick & Mortar', 'Coffee Truck', 'Coffee Cart', 'Coffee Stand / Kiosk',
+      'Roastery Café', 'Café & Bar', 'Café & Bakery', 'Pop-Up Café', 'Drive-Thru Coffee',
     ],
   },
 ];
+
+/** Single-select establishment type options for admin categorization (mirrors the taxonomy above). */
+export const ESTABLISHMENT_TYPES = TAG_TAXONOMY.find((t) => t.category === 'Type of Establishment')!.tags;
 
 /** Flat lookup of tag -> category, for validating & grouping. */
 export const TAG_CATEGORY: Record<string, string> = Object.fromEntries(
