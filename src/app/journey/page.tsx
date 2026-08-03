@@ -16,6 +16,7 @@ export default function JourneyPage() {
   const { me, savesByType, getCafe, listsForMe } = useStore();
   const [section, setSection] = useState<Section>('Want To Go');
   const [wtgView, setWtgView] = useState<'list' | 'map'>('list');
+  const [sippedView, setSippedView] = useState<'list' | 'map'>('list');
 
   if (!me) {
     return (
@@ -59,15 +60,22 @@ export default function JourneyPage() {
 
       {section === 'Sipped There' && (
         sipped.length === 0 ? <EmptyState title="No stamps yet" body="Mark a café as Sipped There to earn your first passport stamp." /> : (
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            {sipped.map(({ cafe, save }, i) => (
-              <div key={cafe!.id} className="flex flex-col items-center">
-                <PassportStamp cafe={cafe!} save={save} index={i} />
-                <p className="mt-1 text-center font-display text-base text-racing-700">{cafe!.name}</p>
-                {save.createdAt && <p className="font-mono text-[0.65rem] text-coffee/50">{formatStampDate(save.createdAt)}</p>}
+          <>
+            <ViewToggle view={sippedView} onChange={setSippedView} />
+            {sippedView === 'map' ? (
+              <MapView cafes={sipped.map((x) => x.cafe!)} className="h-[55vh] w-full" />
+            ) : (
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                {sipped.map(({ cafe, save }, i) => (
+                  <div key={cafe!.id} className="flex flex-col items-center">
+                    <PassportStamp cafe={cafe!} save={save} index={i} />
+                    <p className="mt-1 text-center font-display text-base text-racing-700">{cafe!.name}</p>
+                    {save.createdAt && <p className="font-mono text-[0.65rem] text-coffee/50">{formatStampDate(save.createdAt)}</p>}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )
       )}
 
