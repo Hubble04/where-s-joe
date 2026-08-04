@@ -190,6 +190,23 @@ create table if not exists public.cafe_edit_suggestions (
 create index if not exists cafe_edit_suggestions_cafe_idx on public.cafe_edit_suggestions (cafe_id);
 create index if not exists cafe_edit_suggestions_status_idx on public.cafe_edit_suggestions (status);
 
+-- ---------------------------------------------------------------------------
+-- cafe_claims  (a user asserting they own/manage an existing café)
+-- ---------------------------------------------------------------------------
+create table if not exists public.cafe_claims (
+  id            uuid primary key default gen_random_uuid(),
+  cafe_id       uuid not null references public.cafes (id) on delete cascade,
+  submitted_by  uuid references auth.users (id) on delete set null,
+  role          text not null check (role in ('Owner', 'Manager', 'Employee', 'Other')),
+  contact_email text not null,
+  phone         text default '',
+  notes         text default '',
+  status        text not null default 'pending' check (status in ('pending','approved','rejected')),
+  created_at    timestamptz not null default now()
+);
+create index if not exists cafe_claims_cafe_idx on public.cafe_claims (cafe_id);
+create index if not exists cafe_claims_status_idx on public.cafe_claims (status);
+
 -- =========================================================================
 -- Helper: is the current user an admin?
 -- =========================================================================
@@ -219,6 +236,7 @@ alter table public.custom_lists      enable row level security;
 alter table public.custom_list_items enable row level security;
 alter table public.suggested_cafes   enable row level security;
 alter table public.cafe_edit_suggestions enable row level security;
+alter table public.cafe_claims enable row level security;
 
 -- profiles: world-readable; self-write; admins may update (e.g. grant roles).
 drop policy if exists p_profiles_read on public.profiles;
@@ -346,6 +364,20 @@ create policy p_edits_admin on public.cafe_edit_suggestions for update to authen
   using (public.is_admin()) with check (public.is_admin());
 drop policy if exists p_edits_delete on public.cafe_edit_suggestions;
 create policy p_edits_delete on public.cafe_edit_suggestions for delete to authenticated
+  using (public.is_admin());
+
+-- cafe_claims: submitter sees/writes own; admin sees/manages all.
+drop policy if exists p_claims_read on public.cafe_claims;
+create policy p_claims_read on public.cafe_claims for select to authenticated
+  using (submitted_by = auth.uid() or public.is_admin());
+drop policy if exists p_claims_write on public.cafe_claims;
+create policy p_claims_write on public.cafe_claims for insert to authenticated
+  with check (submitted_by = auth.uid());
+drop policy if exists p_claims_admin on public.cafe_claims;
+create policy p_claims_admin on public.cafe_claims for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+drop policy if exists p_claims_delete on public.cafe_claims;
+create policy p_claims_delete on public.cafe_claims for delete to authenticated
   using (public.is_admin());
 
 -- =========================================================================

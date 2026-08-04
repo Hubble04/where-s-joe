@@ -6,7 +6,7 @@ import {
 } from 'react';
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
-  SaveType, Visibility, WeekHours, CafeEditSuggestion, EditReason,
+  SaveType, Visibility, WeekHours, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
 } from './types';
 import { getSupabaseBrowser } from './supabase/client';
 import { StoreContext, type StoreValue } from './storeContext';
@@ -79,6 +79,14 @@ function rowToEditSuggestion(r: any): CafeEditSuggestion {
   };
 }
 
+function rowToClaim(r: any): CafeClaim {
+  return {
+    id: r.id, cafeId: r.cafe_id, submittedBy: r.submitted_by, role: r.role,
+    contactEmail: r.contact_email ?? '', phone: r.phone ?? '', notes: r.notes ?? '',
+    status: r.status, createdAt: r.created_at,
+  };
+}
+
 const FALLBACK_USER: Omit<Profile, 'id'> = {
   name: 'Unknown', username: 'unknown', bio: '', profilePhotoUrl: '', location: '',
   role: 'user', createdAt: new Date().toISOString(),
@@ -102,6 +110,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const [myLists, setMyLists] = useState<CustomList[]>([]);
   const [suggestions, setSuggestions] = useState<SuggestedCafe[]>([]);
   const [editSuggestions, setEditSuggestions] = useState<CafeEditSuggestion[]>([]);
+  const [claims, setClaims] = useState<CafeClaim[]>([]);
 
   // --- loaders ---------------------------------------------------------
   const loadProfiles = useCallback(async () => {
@@ -164,6 +173,12 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     setEditSuggestions((data ?? []).map(rowToEditSuggestion));
   }, [supabase]);
 
+  const loadClaims = useCallback(async () => {
+    const { data, error } = await supabase.from('cafe_claims').select('*').order('created_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    setClaims((data ?? []).map(rowToClaim));
+  }, [supabase]);
+
   const loadMySaves = useCallback(async (userId: string) => {
     const { data, error } = await supabase.from('user_cafe_saves').select('*').eq('user_id', userId);
     if (error) { console.error(error); return; }
@@ -207,7 +222,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     let alive = true;
     (async () => {
       await Promise.all([
-        loadProfiles(), loadCafes(), loadPosts(), loadFollows(), loadSuggestions(), loadEditSuggestions(),
+        loadProfiles(), loadCafes(), loadPosts(), loadFollows(), loadSuggestions(), loadEditSuggestions(), loadClaims(),
         meId ? loadMySaves(meId) : Promise.resolve(setMySaves([])),
         meId ? loadMyLists(meId) : Promise.resolve(setMyLists([])),
       ]);
@@ -247,6 +262,15 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       submitterName: s.submittedBy ? profiles.find((p) => p.id === s.submittedBy)?.name : undefined,
     })),
     [editSuggestions, cafes, profiles],
+  );
+
+  const claimsOut = useMemo<CafeClaim[]>(
+    () => claims.map((c) => ({
+      ...c,
+      cafeName: cafes.find((cf) => cf.id === c.cafeId)?.name,
+      submitterName: c.submittedBy ? profiles.find((p) => p.id === c.submittedBy)?.name : undefined,
+    })),
+    [claims, cafes, profiles],
   );
 
   const getUser = useCallback((id: string) => profiles.find((p) => p.id === id) ?? { ...FALLBACK_USER, id }, [profiles]);
@@ -535,10 +559,39 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     });
   }, [supabase, loadEditSuggestions]);
 
+  const submitClaim = useCallback((cafeId: string, role: ClaimRole, contactEmail: string, phone?: string, notes?: string) => {
+    if (!meId) return;
+    const tempId = 'tmp-' + uid();
+    setClaims((prev) => [
+      { id: tempId, cafeId, submittedBy: meId, role, contactEmail, phone: phone ?? '', notes: notes ?? '', status: 'pending', createdAt: new Date().toISOString() },
+      ...prev,
+    ]);
+    supabase.from('cafe_claims').insert({
+      cafe_id: cafeId, submitted_by: meId, role, contact_email: contactEmail, phone: phone ?? '', notes: notes ?? '',
+    }).select().single().then(({ data, error }: any) => {
+      if (error) { console.error(error); setClaims((prev) => prev.filter((c) => c.id !== tempId)); }
+      else if (data) setClaims((prev) => prev.map((c) => (c.id === tempId ? rowToClaim(data) : c)));
+    });
+  }, [meId, supabase]);
+
+  const setClaimStatus = useCallback((id: string, status: 'approved' | 'rejected') => {
+    setClaims((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
+    supabase.from('cafe_claims').update({ status }).eq('id', id).then(({ error }: any) => {
+      if (error) { console.error(error); loadClaims(); }
+    });
+  }, [supabase, loadClaims]);
+
+  const setVerifiedByJoe = useCallback((cafeId: string, verified: boolean) => {
+    setCafes((prev) => prev.map((c) => (c.id === cafeId ? { ...c, verifiedByJoe: verified } : c)));
+    supabase.from('cafes').update({ verified_by_joe: verified }).eq('id', cafeId).then(({ error }: any) => {
+      if (error) { console.error(error); loadCafes(); }
+    });
+  }, [supabase, loadCafes]);
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: profiles, cafes,
     posts: postsOut, comments, saves: mySaves, lists: myLists,
-    suggestions: suggestionsOut, editSuggestions: editSuggestionsOut, follows,
+    suggestions: suggestionsOut, editSuggestions: editSuggestionsOut, claims: claimsOut, follows,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe,
@@ -547,6 +600,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
     approveSuggestion, rejectSuggestion, deletePost, setCafeStatus, setEstablishmentType,
     submitEditSuggestion, resolveEditSuggestion,
+    submitClaim, setClaimStatus, setVerifiedByJoe,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

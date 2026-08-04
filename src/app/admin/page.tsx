@@ -3,18 +3,21 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
-import type { SuggestedCafe, Cafe, CafeEditSuggestion } from '@/lib/types';
+import type { SuggestedCafe, Cafe, CafeEditSuggestion, CafeClaim } from '@/lib/types';
 import { TAG_CATEGORY, ESTABLISHMENT_TYPES } from '@/lib/brand';
 import { SectionTitle, EmptyState, Chip, SearchBar } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { timeAgo } from '@/lib/utils';
 
-const TABS = ['Suggestions', 'Edit Reports', 'Posts', 'Cafés', 'Users'] as const;
+const TABS = ['Suggestions', 'Edit Reports', 'Claims', 'Posts', 'Cafés', 'Users'] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminPage() {
-  const { me, suggestions, approveSuggestion, rejectSuggestion, posts, deletePost, cafes, users, getUser, editSuggestions, resolveEditSuggestion } = useStore();
+  const {
+    me, suggestions, approveSuggestion, rejectSuggestion, posts, deletePost, cafes, users, getUser,
+    editSuggestions, resolveEditSuggestion, claims,
+  } = useStore();
   const [tab, setTab] = useState<Tab>('Suggestions');
   const [cafeQuery, setCafeQuery] = useState('');
 
@@ -43,6 +46,7 @@ export default function AdminPage() {
 
   const pending = suggestions.filter((s) => s.moderationStatus === 'pending');
   const pendingEdits = editSuggestions.filter((s) => s.status === 'pending');
+  const pendingClaims = claims.filter((c) => c.status === 'pending');
   const q = cafeQuery.trim().toLowerCase();
   const matchesQuery = (c: Cafe) => !q || [c.name, c.city, c.state, c.neighborhood].join(' ').toLowerCase().includes(q);
   const cafesNeedingReview = cafes.filter((c) => c.status === 'pending' && matchesQuery(c));
@@ -53,9 +57,10 @@ export default function AdminPage() {
       <p className="eyebrow mb-1">Moderation</p>
       <h1 className="mb-4 font-display text-3xl text-racing-700">Admin</h1>
 
-      <div className="mb-4 grid grid-cols-5 gap-2">
+      <div className="mb-4 grid grid-cols-3 gap-2">
         <Stat label="Pending" value={pending.length} />
         <Stat label="Reports" value={pendingEdits.length} />
+        <Stat label="Claims" value={pendingClaims.length} />
         <Stat label="Posts" value={posts.length} />
         <Stat label="Cafés" value={cafes.length} />
         <Stat label="Users" value={users.length} />
@@ -66,6 +71,7 @@ export default function AdminPage() {
           let label: string = t;
           if (t === 'Suggestions' && pending.length) label = `Suggestions (${pending.length})`;
           if (t === 'Edit Reports' && pendingEdits.length) label = `Edit Reports (${pendingEdits.length})`;
+          if (t === 'Claims' && pendingClaims.length) label = `Claims (${pendingClaims.length})`;
           if (t === 'Cafés' && cafesNeedingReview.length) label = `Cafés (${cafesNeedingReview.length})`;
           return <Chip key={t} label={label} active={tab === t} onClick={() => setTab(t)} />;
         })}
@@ -83,6 +89,14 @@ export default function AdminPage() {
         pendingEdits.length === 0 ? <EmptyState title="Queue is clear" body="No edit reports awaiting review." /> : (
           <div className="space-y-2">
             {pendingEdits.map((s) => <EditReportCard key={s.id} suggestion={s} />)}
+          </div>
+        )
+      )}
+
+      {tab === 'Claims' && (
+        pendingClaims.length === 0 ? <EmptyState title="Queue is clear" body="No café claims awaiting review." /> : (
+          <div className="space-y-2">
+            {pendingClaims.map((c) => <ClaimCard key={c.id} claim={c} />)}
           </div>
         )
       )}
@@ -181,7 +195,7 @@ function CafeReviewCard({ cafe }: { cafe: Cafe }) {
 }
 
 function PublishedCafeRow({ cafe }: { cafe: Cafe }) {
-  const { setCafeStatus } = useStore();
+  const { setCafeStatus, setVerifiedByJoe } = useStore();
   return (
     <div className="rounded-card bg-ivory p-3 shadow-card">
       <div className="flex items-center justify-between gap-2">
@@ -189,7 +203,12 @@ function PublishedCafeRow({ cafe }: { cafe: Cafe }) {
           <p className="truncate font-display text-lg text-racing-700">{cafe.name}</p>
           <p className="font-mono text-[0.65rem] text-coffee/50">{cafe.neighborhood} · {cafe.city}, {cafe.state}</p>
         </Link>
-        {cafe.verifiedByJoe && <span className="shrink-0 rounded-pill bg-racing-600/15 px-2 py-0.5 font-mono text-[0.6rem] text-racing-700">Verified</span>}
+        <button
+          onClick={() => setVerifiedByJoe(cafe.id, !cafe.verifiedByJoe)}
+          className={`shrink-0 rounded-pill px-2 py-0.5 font-mono text-[0.6rem] ${cafe.verifiedByJoe ? 'bg-racing-600/15 text-racing-700' : 'border border-racing-100 text-coffee/50'}`}
+        >
+          {cafe.verifiedByJoe ? 'Verified' : 'Mark Verified'}
+        </button>
       </div>
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <EstablishmentTypeSelect cafe={cafe} />
@@ -233,6 +252,37 @@ function EditReportCard({ suggestion: s }: { suggestion: CafeEditSuggestion }) {
       <p className="mt-2 font-mono text-[0.65rem] text-coffee/45">Reported by {s.submitterName || 'a member'}</p>
       <div className="mt-3">
         <Button size="sm" onClick={() => resolveEditSuggestion(s.id)}>Mark Resolved</Button>
+      </div>
+    </div>
+  );
+}
+
+function ClaimCard({ claim: c }: { claim: CafeClaim }) {
+  const { setClaimStatus, setVerifiedByJoe } = useStore();
+  return (
+    <div className="rounded-card bg-ivory p-3 shadow-card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {c.cafeName ? (
+            <Link href={`/cafe/${c.cafeId}`} className="block truncate font-display text-lg text-racing-700 hover:underline">{c.cafeName}</Link>
+          ) : (
+            <p className="truncate font-display text-lg text-racing-700">Unknown café</p>
+          )}
+          <span className="mt-0.5 inline-block rounded-pill bg-amber/15 px-2 py-0.5 font-mono text-[0.65rem] text-amber-dark">{c.role}</span>
+        </div>
+        <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(c.createdAt)}</span>
+      </div>
+      <p className="mt-2 font-mono text-xs text-coffee/70">{c.contactEmail}{c.phone ? ` · ${c.phone}` : ''}</p>
+      {c.notes && <p className="mt-2 text-sm text-coffee/80">{c.notes}</p>}
+      <p className="mt-2 font-mono text-[0.65rem] text-coffee/45">Submitted by {c.submitterName || 'a member'}</p>
+      <div className="mt-3 flex gap-2">
+        <Button
+          className="flex-1"
+          onClick={() => { setClaimStatus(c.id, 'approved'); setVerifiedByJoe(c.cafeId, true); }}
+        >
+          Approve &amp; Verify
+        </Button>
+        <Button variant="danger" className="flex-1" onClick={() => setClaimStatus(c.id, 'rejected')}>Reject</Button>
       </div>
     </div>
   );

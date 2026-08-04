@@ -3,7 +3,7 @@
 import { createContext, useContext } from 'react';
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
-  SaveType, Visibility, CafeEditSuggestion, EditReason,
+  SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
 } from './types';
 
 /**
@@ -24,6 +24,7 @@ export interface StoreValue {
   lists: CustomList[];
   suggestions: SuggestedCafe[];
   editSuggestions: CafeEditSuggestion[];
+  claims: CafeClaim[];
   follows: { followerId: string; followingId: string }[];
 
   getUser: (id: string) => Profile;
@@ -64,6 +65,9 @@ export interface StoreValue {
   setEstablishmentType: (cafeId: string, type: string) => void;
   submitEditSuggestion: (cafeId: string, reason: EditReason, details?: string) => void;
   resolveEditSuggestion: (id: string) => void;
+  submitClaim: (cafeId: string, role: ClaimRole, contactEmail: string, phone?: string, notes?: string) => void;
+  setClaimStatus: (id: string, status: 'approved' | 'rejected') => void;
+  setVerifiedByJoe: (cafeId: string, verified: boolean) => void;
 }
 
 export const StoreContext = createContext<StoreValue | null>(null);

@@ -161,3 +161,21 @@ export interface CafeEditSuggestion {
   cafeName?: string;
   submitterName?: string;
 }
+
+export const CLAIM_ROLES = ['Owner', 'Manager', 'Employee', 'Other'] as const;
+export type ClaimRole = typeof CLAIM_ROLES[number];
+
+export interface CafeClaim {
+  id: string;
+  cafeId: string;
+  submittedBy: string | null;
+  role: ClaimRole;
+  contactEmail: string;
+  phone: string;
+  notes: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  // joined
+  cafeName?: string;
+  submitterName?: string;
+}

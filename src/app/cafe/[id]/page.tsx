@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { TAG_CATEGORY } from '@/lib/brand';
-import { EDIT_REASONS, type EditReason } from '@/lib/types';
+import { EDIT_REASONS, type EditReason, CLAIM_ROLES, type ClaimRole } from '@/lib/types';
 import { groupTags, openLabel, cn } from '@/lib/utils';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { Rating, VerifiedBadge } from '@/components/Badge';
@@ -17,13 +17,19 @@ import { SectionTitle, SignInPrompt, Modal } from '@/components/ui';
 export default function CafePage({ params }: { params: { id: string } }) {
   const { id } = params;
   const router = useRouter();
-  const { me, getCafe, postsForCafe, savesForCafe, submitEditSuggestion } = useStore();
+  const { me, getCafe, postsForCafe, savesForCafe, submitEditSuggestion, submitClaim } = useStore();
   const [authPrompt, setAuthPrompt] = useState(false);
   const [directionsPrompt, setDirectionsPrompt] = useState(false);
   const [editPrompt, setEditPrompt] = useState(false);
   const [editReason, setEditReason] = useState<EditReason | null>(null);
   const [editDetails, setEditDetails] = useState('');
   const [editSent, setEditSent] = useState(false);
+  const [claimPrompt, setClaimPrompt] = useState(false);
+  const [claimRole, setClaimRole] = useState<ClaimRole | ''>('');
+  const [claimEmail, setClaimEmail] = useState('');
+  const [claimPhone, setClaimPhone] = useState('');
+  const [claimNotes, setClaimNotes] = useState('');
+  const [claimSent, setClaimSent] = useState(false);
   const cafe = getCafe(id);
 
   if (!cafe) {
@@ -169,6 +175,16 @@ export default function CafePage({ params }: { params: { id: string } }) {
         >
           Suggest an Edit
         </button>
+        <button
+          onClick={() => {
+            if (!me) { setAuthPrompt(true); return; }
+            setClaimEmail(me.email ?? '');
+            setClaimPrompt(true);
+          }}
+          className="mt-2 w-full rounded-pill border border-racing-100 px-4 py-2.5 text-center font-mono text-xs text-coffee/55 transition-colors hover:border-racing-300 hover:text-coffee/80"
+        >
+          Claim This Café
+        </button>
       </div>
 
       <Modal open={authPrompt} onClose={() => setAuthPrompt(false)} title="Join Where's Joe?">
@@ -218,6 +234,62 @@ export default function CafePage({ params }: { params: { id: string } }) {
               }}
             >
               Submit
+            </Button>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={claimPrompt}
+        onClose={() => { setClaimPrompt(false); setClaimRole(''); setClaimEmail(''); setClaimPhone(''); setClaimNotes(''); setClaimSent(false); }}
+        title="Get Verified by Joe"
+      >
+        {claimSent ? (
+          <div className="py-4 text-center">
+            <p className="font-heading text-base text-racing-700">Claim submitted!</p>
+            <p className="mt-1 font-mono text-xs text-coffee/60">Joe&rsquo;s team will review it and reach out.</p>
+          </div>
+        ) : (
+          <>
+            <p className="mb-4 text-sm text-coffee/70">
+              Own or manage this café? Claim your profile to update your information, upload photos, respond to community activity, and apply for the Verified by Joe badge.
+            </p>
+            <label className="mb-1 block font-mono text-xs text-coffee/60">Your role</label>
+            <select
+              value={claimRole} onChange={(e) => setClaimRole(e.target.value as ClaimRole)}
+              className="mb-4 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm"
+            >
+              <option value="">Select a role…</option>
+              {CLAIM_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <label className="mb-1 block font-mono text-xs text-coffee/60">Business email</label>
+            <input
+              value={claimEmail} onChange={(e) => setClaimEmail(e.target.value)} type="email"
+              placeholder="you@thecafe.com"
+              className="mb-4 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-racing-600"
+            />
+            <label className="mb-1 block font-mono text-xs text-coffee/60">Phone (optional)</label>
+            <input
+              value={claimPhone} onChange={(e) => setClaimPhone(e.target.value)} type="tel"
+              placeholder="(512) 555-0100"
+              className="mb-4 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-racing-600"
+            />
+            <label className="mb-1 block font-mono text-xs text-coffee/60">Anything else? (optional)</label>
+            <textarea
+              value={claimNotes} onChange={(e) => setClaimNotes(e.target.value)}
+              placeholder="Anything that helps us verify you run this café."
+              rows={3}
+              className="mb-5 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-racing-600"
+            />
+            <Button
+              variant="primary" className="w-full" disabled={!claimRole || !claimEmail.trim()}
+              onClick={() => {
+                if (!claimRole || !claimEmail.trim()) return;
+                submitClaim(cafe.id, claimRole, claimEmail.trim(), claimPhone.trim() || undefined, claimNotes.trim() || undefined);
+                setClaimSent(true);
+              }}
+            >
+              Submit claim
             </Button>
           </>
         )}

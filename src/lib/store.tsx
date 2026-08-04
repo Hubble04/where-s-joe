@@ -6,7 +6,7 @@ import {
 } from 'react';
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
-  SaveType, Visibility, CafeEditSuggestion, EditReason,
+  SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
 } from './types';
 import {
   MOCK_CAFES, MOCK_USERS, MOCK_ME, MOCK_POSTS, MOCK_COMMENTS, MOCK_FOLLOWS,
@@ -34,9 +34,11 @@ interface Persisted {
   lists: CustomList[];
   suggestions: SuggestedCafe[];
   editSuggestions: CafeEditSuggestion[];
+  claims: CafeClaim[];
   removedPostIds: string[];
   cafeStatusOverrides: Record<string, Cafe['status']>;
   cafeEstablishmentOverrides: Record<string, string>;
+  cafeVerifiedOverrides: Record<string, boolean>;
   extraCafes: Cafe[];
   profileOverrides: Record<string, Partial<Profile>>;
 }
@@ -73,9 +75,11 @@ function defaultState(): Persisted {
       { id: 'sg1', submittedBy: 'u-mara', name: 'Wildflower Coffee Co.', address: '900 W 10th St', city: 'Austin', state: 'TX', country: 'USA', description: 'New spot near downtown with a great patio.', moderationStatus: 'pending', createdAt: nowISO(), submitterName: 'Mara Ellison', tags: ['Outdoor Seating', 'Wi-Fi'] },
     ],
     editSuggestions: [],
+    claims: [],
     removedPostIds: [],
     cafeStatusOverrides: {},
     cafeEstablishmentOverrides: {},
+    cafeVerifiedOverrides: {},
     extraCafes: [],
     profileOverrides: {},
   };
@@ -114,10 +118,13 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
         const tags = establishment
           ? [...c.tags.filter((t) => TAG_CATEGORY[t] !== 'Type of Establishment'), establishment]
           : c.tags;
-        return { ...c, status: s.cafeStatusOverrides[c.id] ?? c.status, tags };
+        return {
+          ...c, status: s.cafeStatusOverrides[c.id] ?? c.status, tags,
+          verifiedByJoe: s.cafeVerifiedOverrides[c.id] ?? c.verifiedByJoe,
+        };
       })
       .filter((c) => c.status === 'approved');
-  }, [s.extraCafes, s.cafeStatusOverrides, s.cafeEstablishmentOverrides]);
+  }, [s.extraCafes, s.cafeStatusOverrides, s.cafeEstablishmentOverrides, s.cafeVerifiedOverrides]);
 
   const me = useMemo(
     () => (s.currentUserId ? allUsers.find((u) => u.id === s.currentUserId) ?? null : null),
@@ -346,10 +353,27 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, editSuggestions: p.editSuggestions.map((x) => x.id === id ? { ...x, status: 'resolved' } : x) }));
   }, []);
 
+  const submitClaim = useCallback((cafeId: string, role: ClaimRole, contactEmail: string, phone?: string, notes?: string) => {
+    if (!me) return;
+    const claim: CafeClaim = {
+      id: uid(), cafeId, submittedBy: me.id, role, contactEmail, phone: phone ?? '', notes: notes ?? '',
+      status: 'pending', createdAt: nowISO(),
+    };
+    setS((p) => ({ ...p, claims: [claim, ...p.claims] }));
+  }, [me]);
+
+  const setClaimStatus = useCallback((id: string, status: 'approved' | 'rejected') => {
+    setS((p) => ({ ...p, claims: p.claims.map((x) => x.id === id ? { ...x, status } : x) }));
+  }, []);
+
+  const setVerifiedByJoe = useCallback((cafeId: string, verified: boolean) => {
+    setS((p) => ({ ...p, cafeVerifiedOverrides: { ...p.cafeVerifiedOverrides, [cafeId]: verified } }));
+  }, []);
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: allUsers, cafes: allCafes,
     posts: visiblePosts, comments: s.comments, saves: s.saves, lists: s.lists,
-    suggestions: s.suggestions, editSuggestions: s.editSuggestions, follows: s.follows,
+    suggestions: s.suggestions, editSuggestions: s.editSuggestions, claims: s.claims, follows: s.follows,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe,
@@ -358,6 +382,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
     approveSuggestion, rejectSuggestion, deletePost, setCafeStatus, setEstablishmentType,
     submitEditSuggestion, resolveEditSuggestion,
+    submitClaim, setClaimStatus, setVerifiedByJoe,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
