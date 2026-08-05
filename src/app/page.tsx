@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { QUICK_FILTERS } from '@/lib/brand';
 import { isOpenNow, distanceMiles } from '@/lib/utils';
@@ -32,6 +32,20 @@ export default function ExplorePage() {
       { timeout: 8000 },
     );
   }
+
+  // If location access was already granted (e.g. from Location Settings, or a
+  // previous visit), pick it up automatically instead of waiting for a Nearby tap.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation || !navigator.permissions?.query) return;
+    let alive = true;
+    navigator.permissions.query({ name: 'geolocation' as PermissionName }).then((result) => {
+      if (!alive || result.state !== 'granted') return;
+      setActive((a) => (a.includes('Nearby') ? a : [...a, 'Nearby']));
+      requestLocation();
+    }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
