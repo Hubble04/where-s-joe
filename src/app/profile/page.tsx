@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
@@ -20,6 +20,7 @@ export default function ProfilePage() {
   const [tab, setTab] = useState<Tab>('Posts');
   const [editing, setEditing] = useState(false);
   const [authPrompt, setAuthPrompt] = useState(false);
+  const [locationSettings, setLocationSettings] = useState(false);
 
   if (!me) {
     return (
@@ -119,7 +120,7 @@ export default function ProfilePage() {
           <SettingRow label="Edit profile" onClick={() => setEditing(true)} />
           <SettingRow label="Notifications" hint="Coming soon" />
           <SettingRow label="Privacy" hint="Coming soon" />
-          <SettingRow label="Location settings" hint="Coming soon" />
+          <SettingRow label="Location settings" onClick={() => setLocationSettings(true)} />
           <button onClick={() => { signOut(); router.push('/'); }} className="flex w-full items-center justify-between px-4 py-3 text-left">
             <span className="font-mono text-sm text-red-700">Log out</span>
             <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-red-700" strokeWidth={1.6}><path d="M15 12H4m0 0l3-3m-3 3l3 3M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -129,6 +130,7 @@ export default function ProfilePage() {
       </div>
 
       {editing && <EditProfileModal onClose={() => setEditing(false)} />}
+      {locationSettings && <LocationSettingsModal onClose={() => setLocationSettings(false)} />}
       <Modal open={authPrompt} onClose={() => setAuthPrompt(false)} title="Sign in"><SignInPrompt message="Log in to continue." /></Modal>
     </div>
   );
@@ -157,6 +159,86 @@ function SettingRow({ label, hint, onClick }: { label: string; hint?: string; on
       {hint ? <span className="font-mono text-[0.65rem] text-coffee/40">{hint}</span>
         : <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-coffee/40" strokeWidth={1.6}><path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
     </button>
+  );
+}
+
+type GeoStatus = 'checking' | 'granted' | 'denied' | 'prompt' | 'unsupported';
+
+function LocationSettingsModal({ onClose }: { onClose: () => void }) {
+  const { me, updateProfile } = useStore();
+  const [status, setStatus] = useState<GeoStatus>('checking');
+  const [requesting, setRequesting] = useState(false);
+  const [homeLocation, setHomeLocation] = useState(me?.location ?? '');
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) { setStatus('unsupported'); return; }
+    if (!navigator.permissions?.query) { setStatus('prompt'); return; }
+    let alive = true;
+    navigator.permissions.query({ name: 'geolocation' as PermissionName }).then((result) => {
+      if (!alive) return;
+      setStatus(result.state as GeoStatus);
+      result.onchange = () => setStatus(result.state as GeoStatus);
+    }).catch(() => setStatus('prompt'));
+    return () => { alive = false; };
+  }, []);
+
+  function enableLocation() {
+    setRequesting(true);
+    navigator.geolocation.getCurrentPosition(
+      () => { setStatus('granted'); setRequesting(false); },
+      () => { setStatus('denied'); setRequesting(false); },
+      { timeout: 8000 },
+    );
+  }
+
+  function saveHomeLocation() {
+    updateProfile({ location: homeLocation.trim() });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  const statusCopy: Record<GeoStatus, string> = {
+    checking: 'Checking…',
+    granted: 'Enabled',
+    denied: 'Off — blocked in your browser',
+    prompt: 'Not enabled',
+    unsupported: 'Not available on this device',
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Location settings">
+      <p className="mb-1 font-mono text-[0.65rem] uppercase tracking-eyebrow text-coffee/45">Device location</p>
+      <div className="mb-2 flex items-center justify-between rounded-card bg-parchment px-4 py-3">
+        <span className="font-mono text-sm text-coffee/80">{statusCopy[status]}</span>
+        {status === 'granted' && <span className="h-2 w-2 rounded-full bg-racing-600" />}
+      </div>
+      <p className="mb-4 text-sm text-coffee/70">
+        Used to sort cafés by distance when you tap the <span className="text-racing-700">Nearby</span> filter on Explore. We never share your location.
+      </p>
+      {status === 'prompt' && (
+        <Button className="mb-6 w-full" onClick={enableLocation} disabled={requesting}>
+          {requesting ? 'Requesting…' : 'Enable Location Access'}
+        </Button>
+      )}
+      {status === 'denied' && (
+        <p className="mb-6 rounded-card bg-amber/5 px-4 py-3 font-mono text-xs text-coffee/60">
+          Location is blocked for this site. Enable it from your browser or device&rsquo;s site settings, then come back here.
+        </p>
+      )}
+      {status === 'granted' && (
+        <p className="mb-6 font-mono text-xs text-coffee/50">You can turn this off anytime from your browser or device&rsquo;s site settings.</p>
+      )}
+
+      <p className="mb-1 font-mono text-[0.65rem] uppercase tracking-eyebrow text-coffee/45">Home location</p>
+      <input
+        value={homeLocation} onChange={(e) => setHomeLocation(e.target.value)}
+        placeholder="e.g. Austin, TX"
+        className="mb-2 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-racing-600"
+      />
+      <p className="mb-4 font-mono text-xs text-coffee/50">Shown on your profile — separate from device location.</p>
+      <Button variant="outline" className="w-full" onClick={saveHomeLocation}>{saved ? 'Saved!' : 'Save home location'}</Button>
+    </Modal>
   );
 }
 
