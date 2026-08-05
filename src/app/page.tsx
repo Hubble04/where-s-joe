@@ -18,30 +18,34 @@ export default function ExplorePage() {
   const [locationDenied, setLocationDenied] = useState(false);
 
   function toggleFilter(f: string) {
-    if (f === 'Nearby' && !origin) requestLocation();
     setActive((a) => (a.includes(f) ? a.filter((x) => x !== f) : [...a, f]));
   }
 
-  function requestLocation() {
+  const nearbyActive = active.includes('Nearby');
+
+  // While Nearby is on, keep watching position instead of grabbing it once, so
+  // the list keeps re-sorting as the user actually moves around.
+  useEffect(() => {
+    if (!nearbyActive) return;
     if (typeof navigator === 'undefined' || !navigator.geolocation) { setLocationDenied(true); return; }
     setLocating(true);
     setLocationDenied(false);
-    navigator.geolocation.getCurrentPosition(
+    const watchId = navigator.geolocation.watchPosition(
       (pos) => { setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setLocating(false); },
       () => { setLocating(false); setLocationDenied(true); },
-      { timeout: 8000 },
+      { enableHighAccuracy: false, maximumAge: 30000, timeout: 8000 },
     );
-  }
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [nearbyActive]);
 
   // If location access was already granted (e.g. from Location Settings, or a
-  // previous visit), pick it up automatically instead of waiting for a Nearby tap.
+  // previous visit), turn Nearby on automatically instead of waiting for a tap.
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation || !navigator.permissions?.query) return;
     let alive = true;
     navigator.permissions.query({ name: 'geolocation' as PermissionName }).then((result) => {
       if (!alive || result.state !== 'granted') return;
       setActive((a) => (a.includes('Nearby') ? a : [...a, 'Nearby']));
-      requestLocation();
     }).catch(() => {});
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
