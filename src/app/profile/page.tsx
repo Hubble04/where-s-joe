@@ -21,6 +21,7 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false);
   const [authPrompt, setAuthPrompt] = useState(false);
   const [locationSettings, setLocationSettings] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState(false);
 
   if (!me) {
     return (
@@ -118,7 +119,7 @@ export default function ProfilePage() {
         <SectionTitle eyebrow="Account" title="Settings" />
         <div className="divide-y divide-racing-100 overflow-hidden rounded-card bg-ivory shadow-card">
           <SettingRow label="Edit profile" onClick={() => setEditing(true)} />
-          <SettingRow label="Notifications" hint="Coming soon" />
+          <SettingRow label="Notifications" onClick={() => setNotificationSettings(true)} />
           <SettingRow label="Privacy" hint="Coming soon" />
           <SettingRow label="Location settings" onClick={() => setLocationSettings(true)} />
           <button onClick={() => { signOut(); router.push('/'); }} className="flex w-full items-center justify-between px-4 py-3 text-left">
@@ -131,6 +132,7 @@ export default function ProfilePage() {
 
       {editing && <EditProfileModal onClose={() => setEditing(false)} />}
       {locationSettings && <LocationSettingsModal onClose={() => setLocationSettings(false)} />}
+      {notificationSettings && <NotificationSettingsModal onClose={() => setNotificationSettings(false)} />}
       <Modal open={authPrompt} onClose={() => setAuthPrompt(false)} title="Sign in"><SignInPrompt message="Log in to continue." /></Modal>
     </div>
   );
@@ -238,6 +240,43 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
       />
       <p className="mb-4 font-mono text-xs text-coffee/50">Shown on your profile — separate from device location.</p>
       <Button variant="outline" className="w-full" onClick={saveHomeLocation}>{saved ? 'Saved!' : 'Save home location'}</Button>
+    </Modal>
+  );
+}
+
+function NotificationSettingsModal({ onClose }: { onClose: () => void }) {
+  const { me, updateProfile } = useStore();
+  if (!me) return null;
+
+  const rows: { key: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates'; label: string; hint: string }[] = [
+    { key: 'notifyLikesComments', label: 'Likes & comments', hint: 'When someone likes or comments on your posts.' },
+    { key: 'notifyFollows', label: 'Follows', hint: 'When someone starts following you.' },
+    { key: 'notifyActivityUpdates', label: 'Suggestion & claim updates', hint: 'When your café suggestions, edit reports, or claims are reviewed.' },
+  ];
+
+  return (
+    <Modal open onClose={onClose} title="Notifications">
+      <p className="mb-4 text-sm text-coffee/70">Choose what shows up in your notification feed.</p>
+      <div className="mb-2 divide-y divide-racing-100 overflow-hidden rounded-card border border-racing-100">
+        {rows.map((row) => {
+          const on = me[row.key] !== false;
+          return (
+            <div key={row.key} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="font-mono text-sm text-coffee/80">{row.label}</p>
+                <p className="mt-0.5 font-mono text-[0.65rem] text-coffee/45">{row.hint}</p>
+              </div>
+              <button
+                onClick={() => updateProfile({ [row.key]: !on })}
+                aria-pressed={on}
+                className={`shrink-0 rounded-pill px-3 py-1.5 font-mono text-xs transition-colors ${on ? 'bg-racing-600 text-ivory' : 'border border-racing-100 text-coffee/50'}`}
+              >
+                {on ? 'On' : 'Off'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </Modal>
   );
 }

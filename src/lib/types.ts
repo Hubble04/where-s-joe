@@ -16,6 +16,9 @@ export interface Profile {
   location: string;
   role: Role;
   createdAt: string;
+  notifyLikesComments?: boolean;
+  notifyFollows?: boolean;
+  notifyActivityUpdates?: boolean;
   // derived / joined
   followers?: number;
   following?: number;
@@ -178,4 +181,23 @@ export interface CafeClaim {
   // joined
   cafeName?: string;
   submitterName?: string;
+}
+
+export const NOTIFICATION_TYPES = [
+  'like', 'comment', 'follow', 'suggestion_approved', 'suggestion_rejected',
+  'edit_resolved', 'claim_approved', 'claim_rejected',
+] as const;
+export type NotificationType = typeof NOTIFICATION_TYPES[number];
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  actorId: string | null;
+  type: NotificationType;
+  message: string;
+  link: string | null;
+  read: boolean;
+  createdAt: string;
+  // joined
+  actorName?: string;
 }

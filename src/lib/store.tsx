@@ -7,6 +7,7 @@ import {
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
+  AppNotification, NotificationType,
 } from './types';
 import {
   MOCK_CAFES, MOCK_USERS, MOCK_ME, MOCK_POSTS, MOCK_COMMENTS, MOCK_FOLLOWS,
@@ -35,6 +36,7 @@ interface Persisted {
   suggestions: SuggestedCafe[];
   editSuggestions: CafeEditSuggestion[];
   claims: CafeClaim[];
+  notifications: AppNotification[];
   removedPostIds: string[];
   cafeStatusOverrides: Record<string, Cafe['status']>;
   cafeEstablishmentOverrides: Record<string, string>;
@@ -76,6 +78,7 @@ function defaultState(): Persisted {
     ],
     editSuggestions: [],
     claims: [],
+    notifications: [],
     removedPostIds: [],
     cafeStatusOverrides: {},
     cafeEstablishmentOverrides: {},
@@ -235,17 +238,51 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, profileOverrides: { ...p.profileOverrides, [me.id]: { ...(p.profileOverrides[me.id] || {}), ...patch } } }));
   }, [me]);
 
+  /** Create a notification for someone else, honoring their category preference. */
+  const notify = useCallback((
+    recipientId: string | null | undefined,
+    type: NotificationType,
+    message: string,
+    link: string | null,
+    category: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates',
+  ) => {
+    if (!me || !recipientId || recipientId === me.id) return;
+    const recipient = allUsers.find((u) => u.id === recipientId);
+    if (recipient && recipient[category] === false) return;
+    const n: AppNotification = {
+      id: uid(), userId: recipientId, actorId: me.id, type, message, link,
+      read: false, createdAt: nowISO(),
+    };
+    setS((p) => ({ ...p, notifications: [n, ...p.notifications] }));
+  }, [me, allUsers]);
+
+  const markNotificationRead = useCallback((id: string) => {
+    setS((p) => ({ ...p, notifications: p.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) }));
+  }, []);
+
+  const markAllNotificationsRead = useCallback(() => {
+    if (!me) return;
+    setS((p) => ({ ...p, notifications: p.notifications.map((n) => (n.userId === me.id ? { ...n, read: true } : n)) }));
+  }, [me]);
+
   const toggleLike = useCallback((postId: string) => {
     if (!me) return;
     const k = likeKey(postId, me.id);
+    const alreadyLiked = s.likes.includes(k);
     setS((p) => ({ ...p, likes: p.likes.includes(k) ? p.likes.filter((x) => x !== k) : [...p.likes, k] }));
-  }, [me]);
+    if (!alreadyLiked) {
+      const post = s.posts.find((p) => p.id === postId);
+      if (post) notify(post.userId, 'like', `${me.name} liked your post`, '/profile', 'notifyLikesComments');
+    }
+  }, [me, s.likes, s.posts, notify]);
 
   const addComment = useCallback((postId: string, content: string) => {
     if (!me || !content.trim()) return;
     const c: Comment = { id: uid(), postId, userId: me.id, content: content.trim(), createdAt: nowISO() };
     setS((p) => ({ ...p, comments: [...p.comments, c] }));
-  }, [me]);
+    const post = s.posts.find((p) => p.id === postId);
+    if (post) notify(post.userId, 'comment', `${me.name} commented on your post`, '/profile', 'notifyLikesComments');
+  }, [me, s.posts, notify]);
 
   const toggleFollow = useCallback((userId: string) => {
     if (!me || userId === me.id) return;
@@ -255,7 +292,9 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
         ? p.follows.filter((f) => !(f.followerId === me.id && f.followingId === userId))
         : [...p.follows, { followerId: me.id, followingId: userId, createdAt: nowISO() }] };
     });
-  }, [me]);
+    const alreadyFollowing = s.follows.some((f) => f.followerId === me.id && f.followingId === userId);
+    if (!alreadyFollowing) notify(userId, 'follow', `${me.name} started following you`, '/profile', 'notifyFollows');
+  }, [me, s.follows, notify]);
 
   const createPost = useCallback((i: { caption: string; cafeId: string | null; drinkTag: string | null; visibility: Visibility; photos: string[] }) => {
     if (!me) return;
@@ -312,9 +351,11 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
   }, [me]);
 
   const approveSuggestion = useCallback((id: string, coords: { lat: number; lng: number }) => {
+    let sugRef: SuggestedCafe | undefined;
     setS((p) => {
       const sug = p.suggestions.find((x) => x.id === id);
       if (!sug) return p;
+      sugRef = sug;
       const newCafe: Cafe = {
         id: 'sug-' + id, name: sug.name, address: sug.address, city: sug.city, state: sug.state,
         country: sug.country, lat: coords.lat, lng: coords.lng, description: sug.description,
@@ -324,10 +365,13 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
       };
       return { ...p, suggestions: p.suggestions.map((x) => x.id === id ? { ...x, moderationStatus: 'approved' } : x), extraCafes: [...p.extraCafes, newCafe] };
     });
-  }, []);
+    if (sugRef) notify(sugRef.submittedBy, 'suggestion_approved', `Your café suggestion "${sugRef.name}" was approved!`, '/profile', 'notifyActivityUpdates');
+  }, [notify]);
   const rejectSuggestion = useCallback((id: string) => {
+    const sug = s.suggestions.find((x) => x.id === id);
     setS((p) => ({ ...p, suggestions: p.suggestions.map((x) => x.id === id ? { ...x, moderationStatus: 'rejected' } : x) }));
-  }, []);
+    if (sug) notify(sug.submittedBy, 'suggestion_rejected', `Your café suggestion "${sug.name}" wasn't approved`, '/profile', 'notifyActivityUpdates');
+  }, [s.suggestions, notify]);
   const deletePost = useCallback((id: string) => {
     setS((p) => ({ ...p, removedPostIds: [...p.removedPostIds, id] }));
   }, []);
@@ -350,8 +394,13 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
   }, [me]);
 
   const resolveEditSuggestion = useCallback((id: string) => {
+    const sug = s.editSuggestions.find((x) => x.id === id);
     setS((p) => ({ ...p, editSuggestions: p.editSuggestions.map((x) => x.id === id ? { ...x, status: 'resolved' } : x) }));
-  }, []);
+    if (sug) {
+      const cafeName = getCafe(sug.cafeId)?.name ?? 'a café';
+      notify(sug.submittedBy, 'edit_resolved', `Your edit report for ${cafeName} was reviewed`, `/cafe/${sug.cafeId}`, 'notifyActivityUpdates');
+    }
+  }, [s.editSuggestions, getCafe, notify]);
 
   const submitClaim = useCallback((cafeId: string, role: ClaimRole, contactEmail: string, phone?: string, notes?: string) => {
     if (!me) return;
@@ -363,8 +412,15 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
   }, [me]);
 
   const setClaimStatus = useCallback((id: string, status: 'approved' | 'rejected') => {
+    const claim = s.claims.find((x) => x.id === id);
     setS((p) => ({ ...p, claims: p.claims.map((x) => x.id === id ? { ...x, status } : x) }));
-  }, []);
+    if (claim) {
+      const cafeName = getCafe(claim.cafeId)?.name ?? 'a café';
+      const type = status === 'approved' ? 'claim_approved' : 'claim_rejected';
+      const message = status === 'approved' ? `Your claim on ${cafeName} was approved!` : `Your claim on ${cafeName} wasn't approved`;
+      notify(claim.submittedBy, type, message, `/cafe/${claim.cafeId}`, 'notifyActivityUpdates');
+    }
+  }, [s.claims, getCafe, notify]);
 
   const setVerifiedByJoe = useCallback((cafeId: string, verified: boolean) => {
     setS((p) => ({ ...p, cafeVerifiedOverrides: { ...p.cafeVerifiedOverrides, [cafeId]: verified } }));
@@ -373,7 +429,8 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: allUsers, cafes: allCafes,
     posts: visiblePosts, comments: s.comments, saves: s.saves, lists: s.lists,
-    suggestions: s.suggestions, editSuggestions: s.editSuggestions, claims: s.claims, follows: s.follows,
+    suggestions: s.suggestions, editSuggestions: s.editSuggestions, claims: s.claims,
+    notifications: s.notifications, follows: s.follows,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe,
@@ -383,6 +440,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     approveSuggestion, rejectSuggestion, deletePost, setCafeStatus, setEstablishmentType,
     submitEditSuggestion, resolveEditSuggestion,
     submitClaim, setClaimStatus, setVerifiedByJoe,
+    markNotificationRead, markAllNotificationsRead,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

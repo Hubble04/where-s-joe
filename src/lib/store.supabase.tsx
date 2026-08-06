@@ -7,6 +7,7 @@ import {
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, WeekHours, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
+  AppNotification, NotificationType,
 } from './types';
 import { getSupabaseBrowser } from './supabase/client';
 import { StoreContext, type StoreValue } from './storeContext';
@@ -22,6 +23,9 @@ function rowToProfile(r: any): Profile {
     id: r.id, name: r.name, username: r.username, email: r.email ?? undefined,
     bio: r.bio ?? '', profilePhotoUrl: r.profile_photo_url ?? '', location: r.location ?? '',
     role: r.role === 'admin' ? 'admin' : 'user', createdAt: r.created_at,
+    notifyLikesComments: r.notify_likes_comments ?? true,
+    notifyFollows: r.notify_follows ?? true,
+    notifyActivityUpdates: r.notify_activity_updates ?? true,
   };
 }
 
@@ -87,6 +91,13 @@ function rowToClaim(r: any): CafeClaim {
   };
 }
 
+function rowToNotification(r: any): AppNotification {
+  return {
+    id: r.id, userId: r.user_id, actorId: r.actor_id, type: r.type,
+    message: r.message, link: r.link ?? null, read: !!r.read, createdAt: r.created_at,
+  };
+}
+
 const FALLBACK_USER: Omit<Profile, 'id'> = {
   name: 'Unknown', username: 'unknown', bio: '', profilePhotoUrl: '', location: '',
   role: 'user', createdAt: new Date().toISOString(),
@@ -111,6 +122,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const [suggestions, setSuggestions] = useState<SuggestedCafe[]>([]);
   const [editSuggestions, setEditSuggestions] = useState<CafeEditSuggestion[]>([]);
   const [claims, setClaims] = useState<CafeClaim[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   // --- loaders ---------------------------------------------------------
   const loadProfiles = useCallback(async () => {
@@ -179,6 +191,12 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     setClaims((data ?? []).map(rowToClaim));
   }, [supabase]);
 
+  const loadNotifications = useCallback(async (userId: string) => {
+    const { data, error } = await supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(100);
+    if (error) { console.error(error); return; }
+    setNotifications((data ?? []).map(rowToNotification));
+  }, [supabase]);
+
   const loadMySaves = useCallback(async (userId: string) => {
     const { data, error } = await supabase.from('user_cafe_saves').select('*').eq('user_id', userId);
     if (error) { console.error(error); return; }
@@ -225,6 +243,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
         loadProfiles(), loadCafes(), loadPosts(), loadFollows(), loadSuggestions(), loadEditSuggestions(), loadClaims(),
         meId ? loadMySaves(meId) : Promise.resolve(setMySaves([])),
         meId ? loadMyLists(meId) : Promise.resolve(setMyLists([])),
+        meId ? loadNotifications(meId) : Promise.resolve(setNotifications([])),
       ]);
       if (alive) { setReady(true); everReady.current = true; }
     })();
@@ -271,6 +290,11 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       submitterName: c.submittedBy ? profiles.find((p) => p.id === c.submittedBy)?.name : undefined,
     })),
     [claims, cafes, profiles],
+  );
+
+  const notificationsOut = useMemo<AppNotification[]>(
+    () => notifications.map((n) => ({ ...n, actorName: n.actorId ? profiles.find((p) => p.id === n.actorId)?.name : undefined })),
+    [notifications, profiles],
   );
 
   const getUser = useCallback((id: string) => profiles.find((p) => p.id === id) ?? { ...FALLBACK_USER, id }, [profiles]);
@@ -339,11 +363,48 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     if (patch.bio !== undefined) dbPatch.bio = patch.bio;
     if (patch.location !== undefined) dbPatch.location = patch.location;
     if (patch.profilePhotoUrl !== undefined) dbPatch.profile_photo_url = patch.profilePhotoUrl;
+    if (patch.notifyLikesComments !== undefined) dbPatch.notify_likes_comments = patch.notifyLikesComments;
+    if (patch.notifyFollows !== undefined) dbPatch.notify_follows = patch.notifyFollows;
+    if (patch.notifyActivityUpdates !== undefined) dbPatch.notify_activity_updates = patch.notifyActivityUpdates;
     setProfiles((prev) => prev.map((p) => (p.id === meId ? { ...p, ...patch } : p)));
     supabase.from('profiles').update(dbPatch).eq('id', meId).then(({ error }: any) => {
       if (error) { console.error(error); loadProfiles(); }
     });
   }, [meId, supabase, loadProfiles]);
+
+  // --- notifications ------------------------------------------------------
+  /** Fire-and-forget: create a notification for someone else, honoring their category preference. */
+  const notify = useCallback((
+    recipientId: string | null | undefined,
+    type: NotificationType,
+    message: string,
+    link: string | null,
+    category: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates',
+  ) => {
+    if (!meId || !recipientId || recipientId === meId) return;
+    const recipient = profiles.find((p) => p.id === recipientId);
+    if (recipient && recipient[category] === false) return;
+    supabase.from('notifications').insert({ user_id: recipientId, actor_id: meId, type, message, link }).then(({ error }: any) => {
+      if (error) console.error(error);
+    });
+  }, [meId, profiles, supabase]);
+
+  const markNotificationRead = useCallback((id: string) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    supabase.from('notifications').update({ read: true }).eq('id', id).then(({ error }: any) => {
+      if (error) { console.error(error); if (meId) loadNotifications(meId); }
+    });
+  }, [supabase, meId, loadNotifications]);
+
+  const markAllNotificationsRead = useCallback(() => {
+    if (!meId) return;
+    const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    supabase.from('notifications').update({ read: true }).eq('user_id', meId).eq('read', false).then(({ error }: any) => {
+      if (error) { console.error(error); loadNotifications(meId); }
+    });
+  }, [supabase, meId, notifications, loadNotifications]);
 
   // --- social mutations ------------------------------------------------------
   const toggleLike = useCallback((postId: string) => {
@@ -359,8 +420,10 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       supabase.from('likes').insert({ post_id: postId, user_id: meId }).then(({ error }: any) => {
         if (error) { console.error(error); setLikeRows((prev) => prev.filter((l) => !(l.postId === postId && l.userId === meId))); }
       });
+      const post = posts.find((p) => p.id === postId);
+      if (post) notify(post.userId, 'like', `${me?.name ?? 'Someone'} liked your post`, '/profile', 'notifyLikesComments');
     }
-  }, [meId, likeRows, supabase]);
+  }, [meId, likeRows, supabase, posts, me, notify]);
 
   const addComment = useCallback((postId: string, content: string) => {
     if (!meId || !content.trim()) return;
@@ -371,7 +434,9 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       if (error) { console.error(error); setComments((prev) => prev.filter((c) => c.id !== tempId)); }
       else if (data) setComments((prev) => prev.map((c) => (c.id === tempId ? rowToComment(data) : c)));
     });
-  }, [meId, supabase]);
+    const post = posts.find((p) => p.id === postId);
+    if (post) notify(post.userId, 'comment', `${me?.name ?? 'Someone'} commented on your post`, '/profile', 'notifyLikesComments');
+  }, [meId, supabase, posts, me, notify]);
 
   const toggleFollow = useCallback((userId: string) => {
     if (!meId || userId === meId) return;
@@ -386,8 +451,9 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       supabase.from('follows').insert({ follower_id: meId, following_id: userId }).then(({ error }: any) => {
         if (error) { console.error(error); loadFollows(); }
       });
+      notify(userId, 'follow', `${me?.name ?? 'Someone'} started following you`, '/profile', 'notifyFollows');
     }
-  }, [meId, follows, supabase, loadFollows]);
+  }, [meId, follows, supabase, loadFollows, me, notify]);
 
   const createPost = useCallback((i: { caption: string; cafeId: string | null; drinkTag: string | null; visibility: Visibility; photos: string[] }) => {
     if (!meId) return;
@@ -496,16 +562,19 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       }
       const { error: e2 } = await supabase.from('suggested_cafes').update({ moderation_status: 'approved' }).eq('id', id);
       if (e2) console.error(e2);
+      notify(sug.submittedBy, 'suggestion_approved', `Your café suggestion "${sug.name}" was approved!`, '/profile', 'notifyActivityUpdates');
       await Promise.all([loadCafes(), loadSuggestions()]);
     })();
-  }, [suggestions, supabase, loadCafes, loadSuggestions]);
+  }, [suggestions, supabase, loadCafes, loadSuggestions, notify]);
 
   const rejectSuggestion = useCallback((id: string) => {
+    const sug = suggestions.find((s) => s.id === id);
     setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, moderationStatus: 'rejected' } : s)));
     supabase.from('suggested_cafes').update({ moderation_status: 'rejected' }).eq('id', id).then(({ error }: any) => {
       if (error) { console.error(error); loadSuggestions(); }
     });
-  }, [supabase, loadSuggestions]);
+    if (sug) notify(sug.submittedBy, 'suggestion_rejected', `Your café suggestion "${sug.name}" wasn't approved`, '/profile', 'notifyActivityUpdates');
+  }, [supabase, loadSuggestions, suggestions, notify]);
 
   const deletePost = useCallback((id: string) => {
     setPosts((prev) => prev.filter((p) => p.id !== id));
@@ -553,11 +622,16 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   }, [meId, supabase]);
 
   const resolveEditSuggestion = useCallback((id: string) => {
+    const sug = editSuggestions.find((s) => s.id === id);
     setEditSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, status: 'resolved' } : s)));
     supabase.from('cafe_edit_suggestions').update({ status: 'resolved' }).eq('id', id).then(({ error }: any) => {
       if (error) { console.error(error); loadEditSuggestions(); }
     });
-  }, [supabase, loadEditSuggestions]);
+    if (sug) {
+      const cafeName = cafes.find((c) => c.id === sug.cafeId)?.name ?? 'a café';
+      notify(sug.submittedBy, 'edit_resolved', `Your edit report for ${cafeName} was reviewed`, `/cafe/${sug.cafeId}`, 'notifyActivityUpdates');
+    }
+  }, [supabase, loadEditSuggestions, editSuggestions, cafes, notify]);
 
   const submitClaim = useCallback((cafeId: string, role: ClaimRole, contactEmail: string, phone?: string, notes?: string) => {
     if (!meId) return;
@@ -575,11 +649,18 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   }, [meId, supabase]);
 
   const setClaimStatus = useCallback((id: string, status: 'approved' | 'rejected') => {
+    const claim = claims.find((c) => c.id === id);
     setClaims((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
     supabase.from('cafe_claims').update({ status }).eq('id', id).then(({ error }: any) => {
       if (error) { console.error(error); loadClaims(); }
     });
-  }, [supabase, loadClaims]);
+    if (claim) {
+      const cafeName = cafes.find((c) => c.id === claim.cafeId)?.name ?? 'a café';
+      const type = status === 'approved' ? 'claim_approved' : 'claim_rejected';
+      const message = status === 'approved' ? `Your claim on ${cafeName} was approved!` : `Your claim on ${cafeName} wasn't approved`;
+      notify(claim.submittedBy, type, message, `/cafe/${claim.cafeId}`, 'notifyActivityUpdates');
+    }
+  }, [supabase, loadClaims, claims, cafes, notify]);
 
   const setVerifiedByJoe = useCallback((cafeId: string, verified: boolean) => {
     setCafes((prev) => prev.map((c) => (c.id === cafeId ? { ...c, verifiedByJoe: verified } : c)));
@@ -591,7 +672,8 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: profiles, cafes,
     posts: postsOut, comments, saves: mySaves, lists: myLists,
-    suggestions: suggestionsOut, editSuggestions: editSuggestionsOut, claims: claimsOut, follows,
+    suggestions: suggestionsOut, editSuggestions: editSuggestionsOut, claims: claimsOut,
+    notifications: notificationsOut, follows,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe,
@@ -601,6 +683,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     approveSuggestion, rejectSuggestion, deletePost, setCafeStatus, setEstablishmentType,
     submitEditSuggestion, resolveEditSuggestion,
     submitClaim, setClaimStatus, setVerifiedByJoe,
+    markNotificationRead, markAllNotificationsRead,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

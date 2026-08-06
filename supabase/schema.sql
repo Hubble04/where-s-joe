@@ -21,6 +21,11 @@ create table if not exists public.profiles (
   created_at        timestamptz not null default now()
 );
 
+-- Per-category notification preferences (default everything on).
+alter table public.profiles add column if not exists notify_likes_comments boolean not null default true;
+alter table public.profiles add column if not exists notify_follows boolean not null default true;
+alter table public.profiles add column if not exists notify_activity_updates boolean not null default true;
+
 -- ---------------------------------------------------------------------------
 -- cafes
 -- ---------------------------------------------------------------------------
@@ -207,6 +212,25 @@ create table if not exists public.cafe_claims (
 create index if not exists cafe_claims_cafe_idx on public.cafe_claims (cafe_id);
 create index if not exists cafe_claims_status_idx on public.cafe_claims (status);
 
+-- ---------------------------------------------------------------------------
+-- notifications  (in-app activity feed; also the source of truth for push later)
+-- ---------------------------------------------------------------------------
+create table if not exists public.notifications (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  actor_id   uuid references auth.users (id) on delete set null,
+  type       text not null check (type in (
+    'like', 'comment', 'follow', 'suggestion_approved', 'suggestion_rejected',
+    'edit_resolved', 'claim_approved', 'claim_rejected'
+  )),
+  message    text not null,
+  link       text,
+  read       boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists notifications_user_idx on public.notifications (user_id, created_at desc);
+create index if not exists notifications_user_unread_idx on public.notifications (user_id) where not read;
+
 -- =========================================================================
 -- Helper: is the current user an admin?
 -- =========================================================================
@@ -237,6 +261,7 @@ alter table public.custom_list_items enable row level security;
 alter table public.suggested_cafes   enable row level security;
 alter table public.cafe_edit_suggestions enable row level security;
 alter table public.cafe_claims enable row level security;
+alter table public.notifications enable row level security;
 
 -- profiles: world-readable; self-write; admins may update (e.g. grant roles).
 drop policy if exists p_profiles_read on public.profiles;
@@ -379,6 +404,19 @@ create policy p_claims_admin on public.cafe_claims for update to authenticated
 drop policy if exists p_claims_delete on public.cafe_claims;
 create policy p_claims_delete on public.cafe_claims for delete to authenticated
   using (public.is_admin());
+
+-- notifications: only the recipient can read/update their own; any
+-- authenticated user may create one as long as they are the actor
+-- (e.g. the liker, commenter, follower, or admin taking the action).
+drop policy if exists p_notifications_read on public.notifications;
+create policy p_notifications_read on public.notifications for select to authenticated
+  using (user_id = auth.uid());
+drop policy if exists p_notifications_write on public.notifications;
+create policy p_notifications_write on public.notifications for insert to authenticated
+  with check (actor_id = auth.uid());
+drop policy if exists p_notifications_update on public.notifications;
+create policy p_notifications_update on public.notifications for update to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- =========================================================================
 -- Auto-create a profile row on signup (username from metadata or email)
