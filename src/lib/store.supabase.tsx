@@ -387,6 +387,11 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     supabase.from('notifications').insert({ user_id: recipientId, actor_id: meId, type, message, link }).then(({ error }: any) => {
       if (error) console.error(error);
     });
+    fetch('/api/send-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: recipientId, title: "Where's Joe?", body: message, url: link ?? undefined }),
+    }).catch(() => {});
   }, [meId, profiles, supabase]);
 
   const markNotificationRead = useCallback((id: string) => {
@@ -405,6 +410,22 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       if (error) { console.error(error); loadNotifications(meId); }
     });
   }, [supabase, meId, notifications, loadNotifications]);
+
+  const enablePush = useCallback(async (subscription: PushSubscriptionJSON): Promise<{ ok: boolean; error?: string }> => {
+    if (!meId || !subscription.endpoint || !subscription.keys) return { ok: false, error: 'Not signed in.' };
+    const { error } = await supabase.from('push_subscriptions').upsert({
+      user_id: meId, endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh, auth_key: subscription.keys.auth,
+    }, { onConflict: 'endpoint' });
+    if (error) { console.error(error); return { ok: false, error: error.message }; }
+    return { ok: true };
+  }, [meId, supabase]);
+
+  const disablePush = useCallback((endpoint: string) => {
+    supabase.from('push_subscriptions').delete().eq('endpoint', endpoint).then(({ error }: any) => {
+      if (error) console.error(error);
+    });
+  }, [supabase]);
 
   // --- social mutations ------------------------------------------------------
   const toggleLike = useCallback((postId: string) => {
@@ -684,6 +705,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     submitEditSuggestion, resolveEditSuggestion,
     submitClaim, setClaimStatus, setVerifiedByJoe,
     markNotificationRead, markAllNotificationsRead,
+    enablePush, disablePush,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

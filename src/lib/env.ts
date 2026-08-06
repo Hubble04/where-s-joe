@@ -12,7 +12,11 @@ export const env = {
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
   mapboxToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? '',
   siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000',
+  vapidPublicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? '',
 };
+
+/** True when a VAPID public key is configured, so push subscribe can be offered. */
+export const hasPush = env.vapidPublicKey.length > 20;
 
 /** True when both Supabase env vars are present and look real. */
 export const hasSupabase =

@@ -10,6 +10,7 @@ import { CafeCard } from '@/components/CafeCard';
 import { SectionTitle, EmptyState, Modal, SignInPrompt, Chip } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { PhotoUpload } from '@/components/PhotoUpload';
+import { isIOS, isStandalone, isPushSupported, subscribeToPush, unsubscribeFromPush, getExistingSubscription } from '@/lib/push';
 
 const TABS = ['Posts', 'Saved', 'Suggested'] as const;
 type Tab = typeof TABS[number];
@@ -244,8 +245,57 @@ function LocationSettingsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+type PushStatus = 'checking' | 'unsupported' | 'ios-needs-install' | 'blocked' | 'prompt' | 'enabled';
+
 function NotificationSettingsModal({ onClose }: { onClose: () => void }) {
-  const { me, updateProfile } = useStore();
+  const { me, updateProfile, enablePush, disablePush } = useStore();
+  const [pushStatus, setPushStatus] = useState<PushStatus>('checking');
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!isPushSupported()) { setPushStatus('unsupported'); return; }
+      if (isIOS() && !isStandalone()) { setPushStatus('ios-needs-install'); return; }
+      if (typeof Notification !== 'undefined' && Notification.permission === 'denied') { setPushStatus('blocked'); return; }
+      const existing = await getExistingSubscription();
+      if (!alive) return;
+      setPushStatus(existing ? 'enabled' : 'prompt');
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  async function enable() {
+    setPushBusy(true);
+    setPushError('');
+    try {
+      const sub = await subscribeToPush();
+      const result = await enablePush(sub.toJSON() as PushSubscriptionJSON);
+      if (!result.ok) throw new Error(result.error || 'Could not save subscription.');
+      setPushStatus('enabled');
+    } catch (err: any) {
+      setPushError(err?.message || 'Something went wrong enabling push.');
+      if (typeof Notification !== 'undefined' && Notification.permission === 'denied') setPushStatus('blocked');
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function disable() {
+    setPushBusy(true);
+    setPushError('');
+    try {
+      const endpoint = await unsubscribeFromPush();
+      if (endpoint) disablePush(endpoint);
+      setPushStatus('prompt');
+    } catch (err: any) {
+      setPushError(err?.message || 'Something went wrong turning this off.');
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
   if (!me) return null;
 
   const rows: { key: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates'; label: string; hint: string }[] = [
@@ -256,7 +306,43 @@ function NotificationSettingsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal open onClose={onClose} title="Notifications">
-      <p className="mb-4 text-sm text-coffee/70">Choose what shows up in your notification feed.</p>
+      <p className="mb-1 font-mono text-[0.65rem] uppercase tracking-eyebrow text-coffee/45">Push notifications</p>
+      <div className="mb-2 flex items-center justify-between rounded-card bg-parchment px-4 py-3">
+        <span className="font-mono text-sm text-coffee/80">
+          {pushStatus === 'checking' && 'Checking…'}
+          {pushStatus === 'unsupported' && 'Not available on this browser'}
+          {pushStatus === 'ios-needs-install' && 'Add to Home Screen first'}
+          {pushStatus === 'blocked' && 'Off — blocked in your browser'}
+          {pushStatus === 'prompt' && 'Not enabled'}
+          {pushStatus === 'enabled' && 'Enabled on this device'}
+        </span>
+        {pushStatus === 'enabled' && <span className="h-2 w-2 rounded-full bg-racing-600" />}
+      </div>
+
+      {pushStatus === 'ios-needs-install' && (
+        <p className="mb-4 rounded-card bg-amber/5 px-4 py-3 font-mono text-xs text-coffee/60">
+          On iPhone, push only works once Where&rsquo;s Joe? is added to your Home Screen. Tap the Share button in Safari, then &ldquo;Add to Home Screen,&rdquo; then open it from there and come back to this screen.
+        </p>
+      )}
+      {pushStatus === 'blocked' && (
+        <p className="mb-4 rounded-card bg-amber/5 px-4 py-3 font-mono text-xs text-coffee/60">
+          Notifications are blocked for this site. Enable them from your browser or device&rsquo;s site settings, then come back here.
+        </p>
+      )}
+      {pushStatus === 'prompt' && (
+        <Button className="mb-2 w-full" onClick={enable} disabled={pushBusy}>
+          {pushBusy ? 'Enabling…' : 'Enable Push Notifications'}
+        </Button>
+      )}
+      {pushStatus === 'enabled' && (
+        <Button variant="outline" className="mb-2 w-full" onClick={disable} disabled={pushBusy}>
+          {pushBusy ? 'Turning off…' : 'Turn off on this device'}
+        </Button>
+      )}
+      {pushError && <p className="mb-2 font-mono text-[0.65rem] text-red-700">{pushError}</p>}
+      <p className="mb-6 font-mono text-xs text-coffee/50">Alerts you even when Where&rsquo;s Joe? is closed.</p>
+
+      <p className="mb-1 font-mono text-[0.65rem] uppercase tracking-eyebrow text-coffee/45">What you get notified about</p>
       <div className="mb-2 divide-y divide-racing-100 overflow-hidden rounded-card border border-racing-100">
         {rows.map((row) => {
           const on = me[row.key] !== false;

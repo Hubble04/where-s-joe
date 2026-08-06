@@ -265,6 +265,12 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, notifications: p.notifications.map((n) => (n.userId === me.id ? { ...n, read: true } : n)) }));
   }, [me]);
 
+  const enablePush = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    return { ok: false, error: 'Push notifications need the live app, not the demo.' };
+  }, []);
+
+  const disablePush = useCallback(() => {}, []);
+
   const toggleLike = useCallback((postId: string) => {
     if (!me) return;
     const k = likeKey(postId, me.id);
@@ -439,7 +445,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
     approveSuggestion, rejectSuggestion, deletePost, setCafeStatus, setEstablishmentType,
     submitEditSuggestion, resolveEditSuggestion,
-    submitClaim, setClaimStatus, setVerifiedByJoe,
+    submitClaim, setClaimStatus, setVerifiedByJoe, enablePush, disablePush,
     markNotificationRead, markAllNotificationsRead,
   };
 

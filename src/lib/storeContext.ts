@@ -72,6 +72,8 @@ export interface StoreValue {
   setVerifiedByJoe: (cafeId: string, verified: boolean) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
+  enablePush: (subscription: PushSubscriptionJSON) => Promise<{ ok: boolean; error?: string }>;
+  disablePush: (endpoint: string) => void;
 }
 
 export const StoreContext = createContext<StoreValue | null>(null);

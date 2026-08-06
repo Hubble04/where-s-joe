@@ -231,6 +231,19 @@ create table if not exists public.notifications (
 create index if not exists notifications_user_idx on public.notifications (user_id, created_at desc);
 create index if not exists notifications_user_unread_idx on public.notifications (user_id) where not read;
 
+-- ---------------------------------------------------------------------------
+-- push_subscriptions  (one row per browser/device a user has enabled push on)
+-- ---------------------------------------------------------------------------
+create table if not exists public.push_subscriptions (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  endpoint   text not null unique,
+  p256dh     text not null,
+  auth_key   text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+
 -- =========================================================================
 -- Helper: is the current user an admin?
 -- =========================================================================
@@ -262,6 +275,7 @@ alter table public.suggested_cafes   enable row level security;
 alter table public.cafe_edit_suggestions enable row level security;
 alter table public.cafe_claims enable row level security;
 alter table public.notifications enable row level security;
+alter table public.push_subscriptions enable row level security;
 
 -- profiles: world-readable; self-write; admins may update (e.g. grant roles).
 drop policy if exists p_profiles_read on public.profiles;
@@ -417,6 +431,20 @@ create policy p_notifications_write on public.notifications for insert to authen
 drop policy if exists p_notifications_update on public.notifications;
 create policy p_notifications_update on public.notifications for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- push_subscriptions: a user manages only their own device subscriptions.
+-- The server-side push-sending route reads across all users via the
+-- service role key, which bypasses RLS entirely, so no cross-user policy
+-- is needed here.
+drop policy if exists p_push_subs_read on public.push_subscriptions;
+create policy p_push_subs_read on public.push_subscriptions for select to authenticated
+  using (user_id = auth.uid());
+drop policy if exists p_push_subs_write on public.push_subscriptions;
+create policy p_push_subs_write on public.push_subscriptions for insert to authenticated
+  with check (user_id = auth.uid());
+drop policy if exists p_push_subs_delete on public.push_subscriptions;
+create policy p_push_subs_delete on public.push_subscriptions for delete to authenticated
+  using (user_id = auth.uid());
 
 -- =========================================================================
 -- Auto-create a profile row on signup (username from metadata or email)
