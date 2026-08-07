@@ -87,9 +87,14 @@ export default function ExplorePage() {
     });
   }, [origin, nearbyActive, me, savesByType, getCafe, nudgedCafeIds]);
 
+  // Admins can see pending/rejected cafés (needed for the Admin dashboard),
+  // but Explore is a public-facing view — it should only ever show what's
+  // actually published, regardless of who's logged in.
+  const publishedCafes = useMemo(() => cafes.filter((c) => c.status === 'approved'), [cafes]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let list = cafes.filter((c) => {
+    let list = publishedCafes.filter((c) => {
       if (q) {
         const hay = [c.name, c.city, c.state, c.neighborhood, c.signatureDrink, ...(c.tags || [])].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
@@ -107,7 +112,7 @@ export default function ExplorePage() {
       list = [...list].sort((a, b) => distanceMiles(origin, { lat: a.lat, lng: a.lng }) - distanceMiles(origin, { lat: b.lat, lng: b.lng }));
     }
     return list;
-  }, [cafes, query, active, origin]);
+  }, [publishedCafes, query, active, origin]);
 
   return (
     <div className="px-4 py-4">
@@ -163,7 +168,7 @@ export default function ExplorePage() {
         <div className="mt-8">
           <SectionTitle eyebrow="Fresh on the map" title="Newly added" />
           <div className="rail">
-            {[...cafes].slice(-4).reverse().map((c) => <CafeCard key={c.id} cafe={c} variant="rail" />)}
+            {[...publishedCafes].slice(-4).reverse().map((c) => <CafeCard key={c.id} cafe={c} variant="rail" />)}
           </div>
         </div>
       )}

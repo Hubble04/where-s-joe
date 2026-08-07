@@ -95,7 +95,7 @@ function ComposeModal({ onClose }: { onClose: () => void }) {
           <label className="mb-1 block font-mono text-xs text-coffee/60">Tag a café</label>
           <select value={cafeId} onChange={(e) => setCafeId(e.target.value)} className="w-full rounded-xl border border-racing-100 bg-ivory px-2 py-2 font-mono text-xs">
             <option value="">None</option>
-            {cafes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {cafes.filter((c) => c.status === 'approved').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
         <div>
