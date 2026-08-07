@@ -25,6 +25,7 @@ create table if not exists public.profiles (
 alter table public.profiles add column if not exists notify_likes_comments boolean not null default true;
 alter table public.profiles add column if not exists notify_follows boolean not null default true;
 alter table public.profiles add column if not exists notify_activity_updates boolean not null default true;
+alter table public.profiles add column if not exists notify_nearby_nudges boolean not null default true;
 
 -- ---------------------------------------------------------------------------
 -- cafes

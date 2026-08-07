@@ -8,14 +8,17 @@ import { MapView } from '@/components/MapView';
 import { SearchBar, Chip, EmptyState, SectionTitle } from '@/components/ui';
 import { BeanCard } from '@/components/BeanCard';
 
+const NUDGE_RADIUS_MILES = 1;
+
 export default function ExplorePage() {
-  const { ready, cafes } = useStore();
+  const { ready, cafes, me, savesByType, getCafe } = useStore();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState<string[]>([]);
   const [view, setView] = useState<'list' | 'map'>('list');
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationDenied, setLocationDenied] = useState(false);
+  const [nudgedCafeIds, setNudgedCafeIds] = useState<Set<string>>(new Set());
 
   function toggleFilter(f: string) {
     setActive((a) => (a.includes(f) ? a.filter((x) => x !== f) : [...a, f]));
@@ -50,6 +53,39 @@ export default function ExplorePage() {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Nudge the user when a saved (Want To Go / Favorite) café is nearby, while
+  // Explore is open. Each café only nudges once per visit.
+  useEffect(() => {
+    if (!nearbyActive || !origin || !me) return;
+    if (me.notifyNearbyNudges === false) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
+
+    const watchlistCafeIds = new Set([
+      ...savesByType('want_to_go').map((s) => s.cafeId),
+      ...savesByType('favorite').map((s) => s.cafeId),
+    ]);
+
+    watchlistCafeIds.forEach((cafeId) => {
+      if (nudgedCafeIds.has(cafeId)) return;
+      const cafe = getCafe(cafeId);
+      if (!cafe) return;
+      const dist = distanceMiles(origin, { lat: cafe.lat, lng: cafe.lng });
+      if (dist > NUDGE_RADIUS_MILES) return;
+
+      setNudgedCafeIds((prev) => new Set(prev).add(cafeId));
+      const distLabel = dist < 0.1 ? 'right around the corner' : `${dist.toFixed(1)} mi away`;
+      navigator.serviceWorker.ready.then((registration) => {
+        registration.showNotification("Where's Joe?", {
+          body: `☕ ${cafe.name} is ${distLabel} — stop in for a cup?`,
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-192.png',
+          data: { url: `/cafe/${cafe.id}` },
+        } as NotificationOptions);
+      }).catch(() => {});
+    });
+  }, [origin, nearbyActive, me, savesByType, getCafe, nudgedCafeIds]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
