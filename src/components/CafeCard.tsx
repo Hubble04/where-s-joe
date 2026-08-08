@@ -1,13 +1,16 @@
 'use client';
 import Link from 'next/link';
 import type { Cafe } from '@/lib/types';
+import { useStore } from '@/lib/store';
 import { cn, isOpenNow, distanceMiles } from '@/lib/utils';
 import { ImageWithFallback } from './ImageWithFallback';
 import { Rating, VerifiedBadge } from './Badge';
 
 export function CafeCard({ cafe, origin, variant = 'feed' }: { cafe: Cafe; origin?: { lat: number; lng: number } | null; variant?: 'feed' | 'rail' | 'compact' }) {
+  const { hasSave } = useStore();
   const open = isOpenNow(cafe);
   const dist = origin ? distanceMiles(origin, { lat: cafe.lat, lng: cafe.lng }) : null;
+  const sipped = hasSave(cafe.id, 'sipped_there');
 
   if (variant === 'rail') {
     return (
@@ -69,6 +72,9 @@ export function CafeCard({ cafe, origin, variant = 'feed' }: { cafe: Cafe; origi
           </p>
           <p className="mt-2 line-clamp-2 text-sm text-coffee/80">{cafe.description}</p>
           <div className="mt-3 flex flex-wrap gap-1.5">
+            {sipped && (
+              <span className="rounded-pill bg-amber/15 px-2.5 py-1 font-mono text-[0.7rem] text-amber-dark">☕ Sipped There</span>
+            )}
             {cafe.tags.slice(0, 4).map((t) => <span key={t} className="rounded-pill bg-parchment px-2.5 py-1 font-mono text-[0.7rem] text-coffee/80">{t}</span>)}
           </div>
         </div>
