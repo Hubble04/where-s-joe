@@ -26,6 +26,7 @@ alter table public.profiles add column if not exists notify_likes_comments boole
 alter table public.profiles add column if not exists notify_follows boolean not null default true;
 alter table public.profiles add column if not exists notify_activity_updates boolean not null default true;
 alter table public.profiles add column if not exists notify_nearby_nudges boolean not null default true;
+alter table public.profiles add column if not exists notify_nearby_radius_miles smallint not null default 1 check (notify_nearby_radius_miles between 1 and 10);
 
 -- ---------------------------------------------------------------------------
 -- cafes

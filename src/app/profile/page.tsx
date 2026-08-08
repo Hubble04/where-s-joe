@@ -302,8 +302,9 @@ function NotificationSettingsModal({ onClose }: { onClose: () => void }) {
     { key: 'notifyLikesComments', label: 'Likes & comments', hint: 'When someone likes or comments on your posts.' },
     { key: 'notifyFollows', label: 'Follows', hint: 'When someone starts following you.' },
     { key: 'notifyActivityUpdates', label: 'Suggestion & claim updates', hint: 'When your café suggestions, edit reports, or claims are reviewed.' },
-    { key: 'notifyNearbyNudges', label: 'Nearby café nudges', hint: 'When you’re within a mile of a café on your Want To Go or Favorites list (while Explore is open).' },
+    { key: 'notifyNearbyNudges', label: 'Nearby café nudges', hint: 'When you’re close to a café on your Want To Go or Favorites list (while Explore is open).' },
   ];
+  const radiusMiles = me.notifyNearbyRadiusMiles ?? 1;
 
   return (
     <Modal open onClose={onClose} title="Notifications">
@@ -348,18 +349,33 @@ function NotificationSettingsModal({ onClose }: { onClose: () => void }) {
         {rows.map((row) => {
           const on = me[row.key] !== false;
           return (
-            <div key={row.key} className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0">
-                <p className="font-mono text-sm text-coffee/80">{row.label}</p>
-                <p className="mt-0.5 font-mono text-[0.65rem] text-coffee/45">{row.hint}</p>
+            <div key={row.key}>
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-sm text-coffee/80">{row.label}</p>
+                  <p className="mt-0.5 font-mono text-[0.65rem] text-coffee/45">{row.hint}</p>
+                </div>
+                <button
+                  onClick={() => updateProfile({ [row.key]: !on })}
+                  aria-pressed={on}
+                  className={`shrink-0 rounded-pill px-3 py-1.5 font-mono text-xs transition-colors ${on ? 'bg-racing-600 text-ivory' : 'border border-racing-100 text-coffee/50'}`}
+                >
+                  {on ? 'On' : 'Off'}
+                </button>
               </div>
-              <button
-                onClick={() => updateProfile({ [row.key]: !on })}
-                aria-pressed={on}
-                className={`shrink-0 rounded-pill px-3 py-1.5 font-mono text-xs transition-colors ${on ? 'bg-racing-600 text-ivory' : 'border border-racing-100 text-coffee/50'}`}
-              >
-                {on ? 'On' : 'Off'}
-              </button>
+              {row.key === 'notifyNearbyNudges' && on && (
+                <div className="bg-parchment/40 px-4 py-3">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="font-mono text-[0.65rem] text-coffee/60">Nudge distance</span>
+                    <span className="font-mono text-xs text-racing-700">{radiusMiles} mi</span>
+                  </div>
+                  <input
+                    type="range" min={1} max={10} step={1} value={radiusMiles}
+                    onChange={(e) => updateProfile({ notifyNearbyRadiusMiles: Number(e.target.value) })}
+                    className="w-full accent-racing-600"
+                  />
+                </div>
+              )}
             </div>
           );
         })}

@@ -8,8 +8,6 @@ import { MapView } from '@/components/MapView';
 import { SearchBar, Chip, EmptyState, SectionTitle } from '@/components/ui';
 import { BeanCard } from '@/components/BeanCard';
 
-const NUDGE_RADIUS_MILES = 1;
-
 export default function ExplorePage() {
   const { ready, cafes, me, savesByType, getCafe } = useStore();
   const [query, setQuery] = useState('');
@@ -67,12 +65,13 @@ export default function ExplorePage() {
       ...savesByType('favorite').map((s) => s.cafeId),
     ]);
 
+    const radiusMiles = me.notifyNearbyRadiusMiles ?? 1;
     watchlistCafeIds.forEach((cafeId) => {
       if (nudgedCafeIds.has(cafeId)) return;
       const cafe = getCafe(cafeId);
       if (!cafe) return;
       const dist = distanceMiles(origin, { lat: cafe.lat, lng: cafe.lng });
-      if (dist > NUDGE_RADIUS_MILES) return;
+      if (dist > radiusMiles) return;
 
       setNudgedCafeIds((prev) => new Set(prev).add(cafeId));
       const distLabel = dist < 0.1 ? 'right around the corner' : `${dist.toFixed(1)} mi away`;

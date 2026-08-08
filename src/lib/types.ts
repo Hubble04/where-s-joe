@@ -20,6 +20,7 @@ export interface Profile {
   notifyFollows?: boolean;
   notifyActivityUpdates?: boolean;
   notifyNearbyNudges?: boolean;
+  notifyNearbyRadiusMiles?: number;
   // derived / joined
   followers?: number;
   following?: number;
