@@ -7,7 +7,7 @@ import { cn, timeAgo } from '@/lib/utils';
 import { ImageWithFallback } from './ImageWithFallback';
 
 export function PostCard({ post, onNeedAuth }: { post: Post; onNeedAuth: () => void }) {
-  const { me, getUser, getCafe, isLiked, likeCount, commentsFor, toggleLike, addComment, hasSave, toggleSave } = useStore();
+  const { me, getUser, getCafe, isLiked, likeCount, commentsFor, toggleLike, addComment, hasSave, toggleSave, isFollowing, toggleFollow } = useStore();
   const author = getUser(post.userId);
   const cafe = post.cafeId ? getCafe(post.cafeId) : undefined;
   const [open, setOpen] = useState(false);
@@ -31,6 +31,17 @@ export function PostCard({ post, onNeedAuth }: { post: Post; onNeedAuth: () => v
             </Link>
           )}
         </div>
+        {(!me || me.id !== author.id) && (
+          <button
+            onClick={guard(() => toggleFollow(author.id))}
+            className={cn(
+              'shrink-0 rounded-pill px-3 py-1 font-mono text-xs transition-colors',
+              isFollowing(author.id) ? 'border border-racing-100 text-coffee/50' : 'bg-racing-600 text-ivory',
+            )}
+          >
+            {isFollowing(author.id) ? 'Following' : 'Follow'}
+          </button>
+        )}
         <span className="shrink-0 font-mono text-xs text-coffee/40">{timeAgo(post.createdAt)}</span>
       </div>
 
