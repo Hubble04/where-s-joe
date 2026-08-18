@@ -8,6 +8,8 @@ import { MapView } from '@/components/MapView';
 import { SearchBar, Chip, EmptyState, SectionTitle } from '@/components/ui';
 import { BeanCard } from '@/components/BeanCard';
 
+const PAGE_SIZE = 20;
+
 export default function ExplorePage() {
   const { ready, cafes, me, savesByType, getCafe } = useStore();
   const [query, setQuery] = useState('');
@@ -17,6 +19,7 @@ export default function ExplorePage() {
   const [locating, setLocating] = useState(false);
   const [locationDenied, setLocationDenied] = useState(false);
   const [nudgedCafeIds, setNudgedCafeIds] = useState<Set<string>>(new Set());
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   function toggleFilter(f: string) {
     setActive((a) => (a.includes(f) ? a.filter((x) => x !== f) : [...a, f]));
@@ -113,6 +116,16 @@ export default function ExplorePage() {
     return list;
   }, [publishedCafes, query, active, origin]);
 
+  // Reset how many cards are shown whenever the user deliberately changes what
+  // they're looking at — but not on every live position update while Nearby
+  // tracks movement, which would keep yanking the list back to the top.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, active]);
+
+  const visibleCafes = filtered.slice(0, visibleCount);
+
   return (
     <div className="px-4 py-4">
       <div className="mb-4">
@@ -157,9 +170,19 @@ export default function ExplorePage() {
         ) : view === 'map' ? (
           <MapView cafes={filtered} origin={origin} className="h-[60vh] w-full" />
         ) : (
-          <div className="space-y-4">
-            {filtered.map((c) => <CafeCard key={c.id} cafe={c} origin={active.includes('Nearby') ? origin : null} />)}
-          </div>
+          <>
+            <div className="space-y-4">
+              {visibleCafes.map((c) => <CafeCard key={c.id} cafe={c} origin={active.includes('Nearby') ? origin : null} />)}
+            </div>
+            {visibleCount < filtered.length && (
+              <button
+                onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+                className="mt-4 w-full rounded-pill border border-racing-100 py-2.5 text-center font-mono text-sm text-racing-700 transition-colors hover:border-racing-300 hover:bg-racing-50"
+              >
+                ☕ More Coffee Please
+              </button>
+            )}
+          </>
         )}
       </div>
 
