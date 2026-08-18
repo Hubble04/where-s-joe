@@ -11,6 +11,9 @@ import { SectionTitle, EmptyState, Modal, SignInPrompt, Chip } from '@/component
 import { Button } from '@/components/Button';
 import { PhotoUpload } from '@/components/PhotoUpload';
 import { isIOS, isStandalone, isPushSupported, subscribeToPush, unsubscribeFromPush, getExistingSubscription } from '@/lib/push';
+import { VISIBILITY } from '@/lib/brand';
+import type { Visibility } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 const TABS = ['Posts', 'Saved', 'Suggested'] as const;
 type Tab = typeof TABS[number];
@@ -23,6 +26,7 @@ export default function ProfilePage() {
   const [authPrompt, setAuthPrompt] = useState(false);
   const [locationSettings, setLocationSettings] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState(false);
+  const [privacySettings, setPrivacySettings] = useState(false);
 
   if (!me) {
     return (
@@ -121,7 +125,7 @@ export default function ProfilePage() {
         <div className="divide-y divide-racing-100 overflow-hidden rounded-card bg-ivory shadow-card">
           <SettingRow label="Edit profile" onClick={() => setEditing(true)} />
           <SettingRow label="Notifications" onClick={() => setNotificationSettings(true)} />
-          <SettingRow label="Privacy" hint="Coming soon" />
+          <SettingRow label="Privacy" onClick={() => setPrivacySettings(true)} />
           <SettingRow label="Location settings" onClick={() => setLocationSettings(true)} />
           <button onClick={() => { signOut(); router.push('/'); }} className="flex w-full items-center justify-between px-4 py-3 text-left">
             <span className="font-mono text-sm text-red-700">Log out</span>
@@ -134,6 +138,7 @@ export default function ProfilePage() {
       {editing && <EditProfileModal onClose={() => setEditing(false)} />}
       {locationSettings && <LocationSettingsModal onClose={() => setLocationSettings(false)} />}
       {notificationSettings && <NotificationSettingsModal onClose={() => setNotificationSettings(false)} />}
+      {privacySettings && <PrivacySettingsModal onClose={() => setPrivacySettings(false)} />}
       <Modal open={authPrompt} onClose={() => setAuthPrompt(false)} title="Sign in"><SignInPrompt message="Log in to continue." /></Modal>
     </div>
   );
@@ -377,6 +382,47 @@ function NotificationSettingsModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
             </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
+const VISIBILITY_MAP: Record<string, Visibility> = { 'Public': 'public', 'Followers only': 'followers', 'Private': 'private' };
+const VISIBILITY_HINTS: Record<Visibility, string> = {
+  public: 'Anyone can see your posts.',
+  followers: 'Only people who follow you can see your posts.',
+  private: 'Only you can see your posts.',
+};
+
+function PrivacySettingsModal({ onClose }: { onClose: () => void }) {
+  const { me, updateProfile } = useStore();
+  if (!me) return null;
+  const current = me.defaultPostVisibility ?? 'public';
+
+  return (
+    <Modal open onClose={onClose} title="Privacy">
+      <p className="mb-1 font-mono text-[0.65rem] uppercase tracking-eyebrow text-coffee/45">Default post visibility</p>
+      <p className="mb-3 text-sm text-coffee/70">
+        Who can see new posts by default. You can still change this for any individual post when you share it.
+      </p>
+      <div className="mb-2 flex flex-col gap-1.5">
+        {VISIBILITY.map((label) => {
+          const value = VISIBILITY_MAP[label];
+          const active = current === value;
+          return (
+            <button
+              key={label}
+              onClick={() => updateProfile({ defaultPostVisibility: value })}
+              className={cn(
+                'rounded-xl border px-3 py-2.5 text-left transition-colors',
+                active ? 'border-racing-600 bg-racing-600/5' : 'border-racing-100 hover:border-racing-300',
+              )}
+            >
+              <span className={cn('block font-mono text-sm', active ? 'text-racing-700' : 'text-coffee/80')}>{label}</span>
+              <span className="mt-0.5 block font-mono text-[0.65rem] text-coffee/45">{VISIBILITY_HINTS[value]}</span>
+            </button>
           );
         })}
       </div>

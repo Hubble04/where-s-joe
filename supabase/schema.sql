@@ -28,6 +28,9 @@ alter table public.profiles add column if not exists notify_activity_updates boo
 alter table public.profiles add column if not exists notify_nearby_nudges boolean not null default true;
 alter table public.profiles add column if not exists notify_nearby_radius_miles smallint not null default 1 check (notify_nearby_radius_miles between 1 and 10);
 
+-- Default visibility applied to new posts (still changeable per-post at compose time).
+alter table public.profiles add column if not exists default_post_visibility text not null default 'public' check (default_post_visibility in ('public','followers','private'));
+
 -- ---------------------------------------------------------------------------
 -- cafes
 -- ---------------------------------------------------------------------------

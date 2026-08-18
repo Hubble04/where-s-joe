@@ -28,6 +28,7 @@ function rowToProfile(r: any): Profile {
     notifyActivityUpdates: r.notify_activity_updates ?? true,
     notifyNearbyNudges: r.notify_nearby_nudges ?? true,
     notifyNearbyRadiusMiles: r.notify_nearby_radius_miles ?? 1,
+    defaultPostVisibility: r.default_post_visibility ?? 'public',
   };
 }
 
@@ -370,6 +371,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     if (patch.notifyActivityUpdates !== undefined) dbPatch.notify_activity_updates = patch.notifyActivityUpdates;
     if (patch.notifyNearbyNudges !== undefined) dbPatch.notify_nearby_nudges = patch.notifyNearbyNudges;
     if (patch.notifyNearbyRadiusMiles !== undefined) dbPatch.notify_nearby_radius_miles = patch.notifyNearbyRadiusMiles;
+    if (patch.defaultPostVisibility !== undefined) dbPatch.default_post_visibility = patch.defaultPostVisibility;
     setProfiles((prev) => prev.map((p) => (p.id === meId ? { ...p, ...patch } : p)));
     supabase.from('profiles').update(dbPatch).eq('id', meId).then(({ error }: any) => {
       if (error) { console.error(error); loadProfiles(); }

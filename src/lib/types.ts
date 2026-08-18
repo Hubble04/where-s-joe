@@ -21,6 +21,7 @@ export interface Profile {
   notifyActivityUpdates?: boolean;
   notifyNearbyNudges?: boolean;
   notifyNearbyRadiusMiles?: number;
+  defaultPostVisibility?: Visibility;
   // derived / joined
   followers?: number;
   following?: number;

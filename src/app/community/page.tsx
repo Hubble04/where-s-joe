@@ -67,11 +67,11 @@ export default function CommunityPage() {
 }
 
 function ComposeModal({ onClose }: { onClose: () => void }) {
-  const { cafes, createPost } = useStore();
+  const { me, cafes, createPost } = useStore();
   const [caption, setCaption] = useState('');
   const [cafeId, setCafeId] = useState('');
   const [drink, setDrink] = useState('');
-  const [visibility, setVisibility] = useState<Visibility>('public');
+  const [visibility, setVisibility] = useState<Visibility>(me?.defaultPostVisibility ?? 'public');
   const [photos, setPhotos] = useState<string[]>([]);
 
   const visMap: Record<string, Visibility> = { 'Public': 'public', 'Followers only': 'followers', 'Private': 'private' };
