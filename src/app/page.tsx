@@ -7,8 +7,10 @@ import { CafeCard, CafeCardSkeleton } from '@/components/CafeCard';
 import { MapView } from '@/components/MapView';
 import { SearchBar, Chip, EmptyState, SectionTitle } from '@/components/ui';
 import { BeanCard } from '@/components/BeanCard';
+import { Button } from '@/components/Button';
 
 const PAGE_SIZE = 20;
+const NEARBY_RADIUS_MILES = 15;
 
 export default function ExplorePage() {
   const { ready, cafes, me, savesByType, getCafe } = useStore();
@@ -111,7 +113,9 @@ export default function ExplorePage() {
       return true;
     });
     if (origin && active.includes('Nearby')) {
-      list = [...list].sort((a, b) => distanceMiles(origin, { lat: a.lat, lng: a.lng }) - distanceMiles(origin, { lat: b.lat, lng: b.lng }));
+      list = list
+        .filter((c) => distanceMiles(origin, { lat: c.lat, lng: c.lng }) <= NEARBY_RADIUS_MILES)
+        .sort((a, b) => distanceMiles(origin, { lat: a.lat, lng: a.lng }) - distanceMiles(origin, { lat: b.lat, lng: b.lng }));
     }
     return list;
   }, [publishedCafes, query, active, origin]);
@@ -165,6 +169,12 @@ export default function ExplorePage() {
       <div className="mt-3">
         {!ready ? (
           <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <CafeCardSkeleton key={i} />)}</div>
+        ) : filtered.length === 0 && nearbyActive && origin ? (
+          <EmptyState
+            title={`No cafés within ${NEARBY_RADIUS_MILES} mi`}
+            body="Nothing nearby matches right now. Try turning off Nearby to browse everywhere."
+            action={<Button variant="outline" onClick={() => toggleFilter('Nearby')}>Turn off Nearby</Button>}
+          />
         ) : filtered.length === 0 ? (
           <EmptyState title="No cafés match" body="Try clearing a filter or searching a different vibe." />
         ) : view === 'map' ? (
