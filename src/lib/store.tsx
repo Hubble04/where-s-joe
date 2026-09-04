@@ -7,7 +7,7 @@ import {
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
-  AppNotification, NotificationType,
+  AppNotification, NotificationType, CafeNote, CafeTagSuggestion,
 } from './types';
 import {
   MOCK_CAFES, MOCK_USERS, MOCK_ME, MOCK_POSTS, MOCK_COMMENTS, MOCK_FOLLOWS,
@@ -37,10 +37,13 @@ interface Persisted {
   editSuggestions: CafeEditSuggestion[];
   claims: CafeClaim[];
   notifications: AppNotification[];
+  notes: CafeNote[];
+  tagSuggestions: CafeTagSuggestion[];
   removedPostIds: string[];
   cafeStatusOverrides: Record<string, Cafe['status']>;
   cafeEstablishmentOverrides: Record<string, string>;
   cafeVerifiedOverrides: Record<string, boolean>;
+  cafeTagOverrides: Record<string, { added: string[]; removed: string[] }>;
   extraCafes: Cafe[];
   profileOverrides: Record<string, Partial<Profile>>;
 }
@@ -79,10 +82,13 @@ function defaultState(): Persisted {
     editSuggestions: [],
     claims: [],
     notifications: [],
+    notes: [],
+    tagSuggestions: [],
     removedPostIds: [],
     cafeStatusOverrides: {},
     cafeEstablishmentOverrides: {},
     cafeVerifiedOverrides: {},
+    cafeTagOverrides: {},
     extraCafes: [],
     profileOverrides: {},
   };
@@ -118,16 +124,20 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     return base
       .map((c) => {
         const establishment = s.cafeEstablishmentOverrides[c.id];
-        const tags = establishment
+        let tags = establishment
           ? [...c.tags.filter((t) => TAG_CATEGORY[t] !== 'Type of Establishment'), establishment]
           : c.tags;
+        const tagOverride = s.cafeTagOverrides[c.id];
+        if (tagOverride) {
+          tags = [...tags.filter((t) => !tagOverride.removed.includes(t)), ...tagOverride.added.filter((t) => !tags.includes(t))];
+        }
         return {
           ...c, status: s.cafeStatusOverrides[c.id] ?? c.status, tags,
           verifiedByJoe: s.cafeVerifiedOverrides[c.id] ?? c.verifiedByJoe,
         };
       })
       .filter((c) => c.status === 'approved');
-  }, [s.extraCafes, s.cafeStatusOverrides, s.cafeEstablishmentOverrides, s.cafeVerifiedOverrides]);
+  }, [s.extraCafes, s.cafeStatusOverrides, s.cafeEstablishmentOverrides, s.cafeVerifiedOverrides, s.cafeTagOverrides]);
 
   const me = useMemo(
     () => (s.currentUserId ? allUsers.find((u) => u.id === s.currentUserId) ?? null : null),
@@ -157,6 +167,10 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
   const savesForCafe = useCallback(
     (cafeId: string) => (me ? s.saves.filter((v) => v.userId === me.id && v.cafeId === cafeId) : []),
     [s.saves, me],
+  );
+  const noteForCafe = useCallback(
+    (cafeId: string) => (me ? s.notes.find((n) => n.userId === me.id && n.cafeId === cafeId)?.note ?? '' : ''),
+    [s.notes, me],
   );
   const hasSave = useCallback(
     (cafeId: string, type: SaveType) => savesForCafe(cafeId).some((v) => v.saveType === type),
@@ -336,6 +350,17 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     });
   }, [me]);
 
+  const setCafeNote = useCallback((cafeId: string, note: string) => {
+    if (!me) return;
+    setS((p) => {
+      const existing = p.notes.find((n) => n.userId === me.id && n.cafeId === cafeId);
+      const now = nowISO();
+      return { ...p, notes: existing
+        ? p.notes.map((n) => (n.id === existing.id ? { ...n, note, updatedAt: now } : n))
+        : [...p.notes, { id: uid(), userId: me.id, cafeId, note, updatedAt: now }] };
+    });
+  }, [me]);
+
   const createList = useCallback((name: string, description?: string) => {
     const id = uid();
     if (!me) return id;
@@ -390,6 +415,19 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, cafeEstablishmentOverrides: { ...p.cafeEstablishmentOverrides, [cafeId]: type } }));
   }, []);
 
+  const toggleCafeTag = useCallback((cafeId: string, _category: string, tag: string) => {
+    setS((p) => {
+      const base = [...MOCK_CAFES, ...p.extraCafes].find((c) => c.id === cafeId);
+      if (!base) return p;
+      const override = p.cafeTagOverrides[cafeId] ?? { added: [], removed: [] };
+      const currentlyHas = override.added.includes(tag) || (base.tags.includes(tag) && !override.removed.includes(tag));
+      const next = currentlyHas
+        ? { added: override.added.filter((t) => t !== tag), removed: Array.from(new Set([...override.removed, tag])) }
+        : { added: Array.from(new Set([...override.added, tag])), removed: override.removed.filter((t) => t !== tag) };
+      return { ...p, cafeTagOverrides: { ...p.cafeTagOverrides, [cafeId]: next } };
+    });
+  }, []);
+
   const submitEditSuggestion = useCallback((cafeId: string, reason: EditReason, details?: string) => {
     if (!me) return;
     const sug: CafeEditSuggestion = {
@@ -428,6 +466,29 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [s.claims, getCafe, notify]);
 
+  const suggestCafeTag = useCallback((cafeId: string, category: string, tag: string) => {
+    if (!me) return;
+    const sug: CafeTagSuggestion = {
+      id: uid(), cafeId, submittedBy: me.id, category, tag, status: 'pending', createdAt: nowISO(),
+    };
+    setS((p) => ({ ...p, tagSuggestions: [sug, ...p.tagSuggestions] }));
+  }, [me]);
+
+  const resolveTagSuggestion = useCallback((id: string, status: 'approved' | 'rejected') => {
+    const suggestion = s.tagSuggestions.find((x) => x.id === id);
+    setS((p) => ({ ...p, tagSuggestions: p.tagSuggestions.map((x) => x.id === id ? { ...x, status } : x) }));
+    if (!suggestion) return;
+    if (status === 'approved' && !getCafe(suggestion.cafeId)?.tags.includes(suggestion.tag)) {
+      toggleCafeTag(suggestion.cafeId, suggestion.category, suggestion.tag);
+    }
+    const cafeName = getCafe(suggestion.cafeId)?.name ?? 'a café';
+    const type = status === 'approved' ? 'tag_approved' : 'tag_rejected';
+    const message = status === 'approved'
+      ? `Your "${suggestion.tag}" tag for ${cafeName} was approved!`
+      : `Your "${suggestion.tag}" tag for ${cafeName} wasn't approved`;
+    notify(suggestion.submittedBy, type, message, `/cafe/${suggestion.cafeId}`, 'notifyActivityUpdates');
+  }, [s.tagSuggestions, getCafe, notify, toggleCafeTag]);
+
   const setVerifiedByJoe = useCallback((cafeId: string, verified: boolean) => {
     setS((p) => ({ ...p, cafeVerifiedOverrides: { ...p.cafeVerifiedOverrides, [cafeId]: verified } }));
   }, []);
@@ -436,9 +497,9 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     ready, me, isAuthed: !!me, users: allUsers, cafes: allCafes,
     posts: visiblePosts, comments: s.comments, saves: s.saves, lists: s.lists,
     suggestions: s.suggestions, editSuggestions: s.editSuggestions, claims: s.claims,
-    notifications: s.notifications, follows: s.follows,
+    notifications: s.notifications, notes: s.notes, tagSuggestions: s.tagSuggestions, follows: s.follows,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
-    savesForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
+    savesForCafe, noteForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe,
     signIn, signUp, signOut, updateProfile,
     toggleLike, addComment, toggleFollow, createPost,
@@ -447,6 +508,8 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     submitEditSuggestion, resolveEditSuggestion,
     submitClaim, setClaimStatus, setVerifiedByJoe, enablePush, disablePush,
     markNotificationRead, markAllNotificationsRead,
+    setCafeNote,
+    toggleCafeTag, suggestCafeTag, resolveTagSuggestion,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

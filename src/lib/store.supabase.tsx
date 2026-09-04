@@ -7,7 +7,7 @@ import {
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, WeekHours, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
-  AppNotification, NotificationType,
+  AppNotification, NotificationType, CafeNote, CafeTagSuggestion,
 } from './types';
 import { getSupabaseBrowser } from './supabase/client';
 import { StoreContext, type StoreValue } from './storeContext';
@@ -101,6 +101,17 @@ function rowToNotification(r: any): AppNotification {
   };
 }
 
+function rowToNote(r: any): CafeNote {
+  return { id: r.id, userId: r.user_id, cafeId: r.cafe_id, note: r.note ?? '', updatedAt: r.updated_at };
+}
+
+function rowToTagSuggestion(r: any): CafeTagSuggestion {
+  return {
+    id: r.id, cafeId: r.cafe_id, submittedBy: r.submitted_by,
+    category: r.category, tag: r.tag, status: r.status, createdAt: r.created_at,
+  };
+}
+
 const FALLBACK_USER: Omit<Profile, 'id'> = {
   name: 'Unknown', username: 'unknown', bio: '', profilePhotoUrl: '', location: '',
   role: 'user', createdAt: new Date().toISOString(),
@@ -126,6 +137,8 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const [editSuggestions, setEditSuggestions] = useState<CafeEditSuggestion[]>([]);
   const [claims, setClaims] = useState<CafeClaim[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notes, setNotes] = useState<CafeNote[]>([]);
+  const [tagSuggestions, setTagSuggestions] = useState<CafeTagSuggestion[]>([]);
 
   // --- loaders ---------------------------------------------------------
   const loadProfiles = useCallback(async () => {
@@ -200,6 +213,18 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     setNotifications((data ?? []).map(rowToNotification));
   }, [supabase]);
 
+  const loadNotes = useCallback(async (userId: string) => {
+    const { data, error } = await supabase.from('cafe_notes').select('*').eq('user_id', userId);
+    if (error) { console.error(error); return; }
+    setNotes((data ?? []).map(rowToNote));
+  }, [supabase]);
+
+  const loadTagSuggestions = useCallback(async () => {
+    const { data, error } = await supabase.from('cafe_tag_suggestions').select('*').order('created_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    setTagSuggestions((data ?? []).map(rowToTagSuggestion));
+  }, [supabase]);
+
   const loadMySaves = useCallback(async (userId: string) => {
     const { data, error } = await supabase.from('user_cafe_saves').select('*').eq('user_id', userId);
     if (error) { console.error(error); return; }
@@ -243,10 +268,11 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     let alive = true;
     (async () => {
       await Promise.all([
-        loadProfiles(), loadCafes(), loadPosts(), loadFollows(), loadSuggestions(), loadEditSuggestions(), loadClaims(),
+        loadProfiles(), loadCafes(), loadPosts(), loadFollows(), loadSuggestions(), loadEditSuggestions(), loadClaims(), loadTagSuggestions(),
         meId ? loadMySaves(meId) : Promise.resolve(setMySaves([])),
         meId ? loadMyLists(meId) : Promise.resolve(setMyLists([])),
         meId ? loadNotifications(meId) : Promise.resolve(setNotifications([])),
+        meId ? loadNotes(meId) : Promise.resolve(setNotes([])),
       ]);
       if (alive) { setReady(true); everReady.current = true; }
     })();
@@ -295,6 +321,15 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     [claims, cafes, profiles],
   );
 
+  const tagSuggestionsOut = useMemo<CafeTagSuggestion[]>(
+    () => tagSuggestions.map((s) => ({
+      ...s,
+      cafeName: cafes.find((cf) => cf.id === s.cafeId)?.name,
+      submitterName: s.submittedBy ? profiles.find((p) => p.id === s.submittedBy)?.name : undefined,
+    })),
+    [tagSuggestions, cafes, profiles],
+  );
+
   const notificationsOut = useMemo<AppNotification[]>(
     () => notifications.map((n) => ({ ...n, actorName: n.actorId ? profiles.find((p) => p.id === n.actorId)?.name : undefined })),
     [notifications, profiles],
@@ -314,6 +349,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     [follows, meId],
   );
   const savesForCafe = useCallback((cafeId: string) => mySaves.filter((v) => v.cafeId === cafeId), [mySaves]);
+  const noteForCafe = useCallback((cafeId: string) => notes.find((n) => n.cafeId === cafeId)?.note ?? '', [notes]);
   const hasSave = useCallback((cafeId: string, type: SaveType) => savesForCafe(cafeId).some((v) => v.saveType === type), [savesForCafe]);
   const savesByType = useCallback((type: SaveType) => mySaves.filter((v) => v.saveType === type), [mySaves]);
   const listsForMe = useCallback(() => myLists, [myLists]);
@@ -534,6 +570,23 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [meId, mySaves, supabase, loadMySaves]);
 
+  const setCafeNote = useCallback((cafeId: string, note: string) => {
+    if (!meId) return;
+    const existing = notes.find((n) => n.cafeId === cafeId);
+    const now = new Date().toISOString();
+    if (existing) {
+      setNotes((prev) => prev.map((n) => (n.cafeId === cafeId ? { ...n, note, updatedAt: now } : n)));
+    } else {
+      setNotes((prev) => [...prev, { id: 'tmp-' + uid(), userId: meId, cafeId, note, updatedAt: now }]);
+    }
+    supabase.from('cafe_notes').upsert({
+      user_id: meId, cafe_id: cafeId, note, updated_at: now,
+    }, { onConflict: 'user_id,cafe_id' }).select().single().then(({ data, error }: any) => {
+      if (error) { console.error(error); loadNotes(meId); }
+      else if (data) setNotes((prev) => prev.map((n) => (n.cafeId === cafeId ? rowToNote(data) : n)));
+    });
+  }, [meId, notes, supabase, loadNotes]);
+
   const createList = useCallback((name: string, description?: string) => {
     const tempId = 'tmp-' + uid();
     if (!meId) return tempId;
@@ -633,6 +686,23 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     })();
   }, [supabase, loadCafes]);
 
+  const toggleCafeTag = useCallback((cafeId: string, category: string, tag: string) => {
+    const cafe = cafes.find((c) => c.id === cafeId);
+    const has = !!cafe?.tags.includes(tag);
+    setCafes((prev) => prev.map((c) => (c.id === cafeId
+      ? { ...c, tags: has ? c.tags.filter((t) => t !== tag) : [...c.tags, tag] }
+      : c)));
+    (async () => {
+      if (has) {
+        const { error } = await supabase.from('cafe_tags').delete().eq('cafe_id', cafeId).eq('category', category).eq('tag', tag);
+        if (error) { console.error(error); loadCafes(); }
+      } else {
+        const { error } = await supabase.from('cafe_tags').upsert({ cafe_id: cafeId, category, tag }, { onConflict: 'cafe_id,category,tag' });
+        if (error) { console.error(error); loadCafes(); }
+      }
+    })();
+  }, [cafes, supabase, loadCafes]);
+
   const submitEditSuggestion = useCallback((cafeId: string, reason: EditReason, details?: string) => {
     if (!meId) return;
     const tempId = 'tmp-' + uid();
@@ -689,6 +759,40 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [supabase, loadClaims, claims, cafes, notify]);
 
+  const suggestCafeTag = useCallback((cafeId: string, category: string, tag: string) => {
+    if (!meId) return;
+    const tempId = 'tmp-' + uid();
+    setTagSuggestions((prev) => [
+      { id: tempId, cafeId, submittedBy: meId, category, tag, status: 'pending', createdAt: new Date().toISOString() },
+      ...prev,
+    ]);
+    supabase.from('cafe_tag_suggestions').insert({
+      cafe_id: cafeId, submitted_by: meId, category, tag,
+    }).select().single().then(({ data, error }: any) => {
+      if (error) { console.error(error); setTagSuggestions((prev) => prev.filter((s) => s.id !== tempId)); }
+      else if (data) setTagSuggestions((prev) => prev.map((s) => (s.id === tempId ? rowToTagSuggestion(data) : s)));
+    });
+  }, [meId, supabase]);
+
+  const resolveTagSuggestion = useCallback((id: string, status: 'approved' | 'rejected') => {
+    const suggestion = tagSuggestions.find((s) => s.id === id);
+    setTagSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, status } : s)));
+    supabase.from('cafe_tag_suggestions').update({ status }).eq('id', id).then(({ error }: any) => {
+      if (error) { console.error(error); loadTagSuggestions(); }
+    });
+    if (!suggestion) return;
+    if (status === 'approved') {
+      const cafe = cafes.find((c) => c.id === suggestion.cafeId);
+      if (!cafe?.tags.includes(suggestion.tag)) toggleCafeTag(suggestion.cafeId, suggestion.category, suggestion.tag);
+    }
+    const cafeName = cafes.find((c) => c.id === suggestion.cafeId)?.name ?? 'a café';
+    const type = status === 'approved' ? 'tag_approved' : 'tag_rejected';
+    const message = status === 'approved'
+      ? `Your "${suggestion.tag}" tag for ${cafeName} was approved!`
+      : `Your "${suggestion.tag}" tag for ${cafeName} wasn't approved`;
+    notify(suggestion.submittedBy, type, message, `/cafe/${suggestion.cafeId}`, 'notifyActivityUpdates');
+  }, [supabase, loadTagSuggestions, tagSuggestions, cafes, notify, toggleCafeTag]);
+
   const setVerifiedByJoe = useCallback((cafeId: string, verified: boolean) => {
     setCafes((prev) => prev.map((c) => (c.id === cafeId ? { ...c, verifiedByJoe: verified } : c)));
     supabase.from('cafes').update({ verified_by_joe: verified }).eq('id', cafeId).then(({ error }: any) => {
@@ -700,9 +804,9 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     ready, me, isAuthed: !!me, users: profiles, cafes,
     posts: postsOut, comments, saves: mySaves, lists: myLists,
     suggestions: suggestionsOut, editSuggestions: editSuggestionsOut, claims: claimsOut,
-    notifications: notificationsOut, follows,
+    notifications: notificationsOut, notes, tagSuggestions: tagSuggestionsOut, follows,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
-    savesForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
+    savesForCafe, noteForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe,
     signIn, signUp, signOut, updateProfile,
     toggleLike, addComment, toggleFollow, createPost,
@@ -712,6 +816,8 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     submitClaim, setClaimStatus, setVerifiedByJoe,
     markNotificationRead, markAllNotificationsRead,
     enablePush, disablePush,
+    setCafeNote,
+    toggleCafeTag, suggestCafeTag, resolveTagSuggestion,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

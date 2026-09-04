@@ -3,20 +3,20 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
-import type { SuggestedCafe, Cafe, CafeEditSuggestion, CafeClaim } from '@/lib/types';
-import { TAG_CATEGORY, ESTABLISHMENT_TYPES } from '@/lib/brand';
-import { SectionTitle, EmptyState, Chip, SearchBar } from '@/components/ui';
+import type { SuggestedCafe, Cafe, CafeEditSuggestion, CafeClaim, CafeTagSuggestion } from '@/lib/types';
+import { TAG_CATEGORY, ESTABLISHMENT_TYPES, TAG_TAXONOMY } from '@/lib/brand';
+import { SectionTitle, EmptyState, Chip, SearchBar, Modal } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { timeAgo } from '@/lib/utils';
 
-const TABS = ['Suggestions', 'Edit Reports', 'Claims', 'Posts', 'Cafés', 'Users'] as const;
+const TABS = ['Suggestions', 'Edit Reports', 'Claims', 'Tag Suggestions', 'Posts', 'Cafés', 'Users'] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminPage() {
   const {
     me, suggestions, approveSuggestion, rejectSuggestion, posts, deletePost, cafes, users, getUser,
-    editSuggestions, resolveEditSuggestion, claims,
+    editSuggestions, resolveEditSuggestion, claims, tagSuggestions, resolveTagSuggestion,
   } = useStore();
   const [tab, setTab] = useState<Tab>('Suggestions');
   const [cafeQuery, setCafeQuery] = useState('');
@@ -47,6 +47,7 @@ export default function AdminPage() {
   const pending = suggestions.filter((s) => s.moderationStatus === 'pending');
   const pendingEdits = editSuggestions.filter((s) => s.status === 'pending');
   const pendingClaims = claims.filter((c) => c.status === 'pending');
+  const pendingTagSuggestions = tagSuggestions.filter((t) => t.status === 'pending');
   const q = cafeQuery.trim().toLowerCase();
   const matchesQuery = (c: Cafe) => !q || [c.name, c.city, c.state, c.neighborhood].join(' ').toLowerCase().includes(q);
   const cafesNeedingReview = cafes.filter((c) => c.status === 'pending' && matchesQuery(c));
@@ -57,10 +58,11 @@ export default function AdminPage() {
       <p className="eyebrow mb-1">Moderation</p>
       <h1 className="mb-4 font-display text-3xl text-racing-700">Admin</h1>
 
-      <div className="mb-4 grid grid-cols-3 gap-2">
+      <div className="mb-4 grid grid-cols-4 gap-2">
         <Stat label="Pending" value={pending.length} />
         <Stat label="Reports" value={pendingEdits.length} />
         <Stat label="Claims" value={pendingClaims.length} />
+        <Stat label="Tags" value={pendingTagSuggestions.length} />
         <Stat label="Posts" value={posts.length} />
         <Stat label="Cafés" value={cafes.length} />
         <Stat label="Users" value={users.length} />
@@ -72,6 +74,7 @@ export default function AdminPage() {
           if (t === 'Suggestions' && pending.length) label = `Suggestions (${pending.length})`;
           if (t === 'Edit Reports' && pendingEdits.length) label = `Edit Reports (${pendingEdits.length})`;
           if (t === 'Claims' && pendingClaims.length) label = `Claims (${pendingClaims.length})`;
+          if (t === 'Tag Suggestions' && pendingTagSuggestions.length) label = `Tag Suggestions (${pendingTagSuggestions.length})`;
           if (t === 'Cafés' && cafesNeedingReview.length) label = `Cafés (${cafesNeedingReview.length})`;
           return <Chip key={t} label={label} active={tab === t} onClick={() => setTab(t)} />;
         })}
@@ -97,6 +100,14 @@ export default function AdminPage() {
         pendingClaims.length === 0 ? <EmptyState title="Queue is clear" body="No café claims awaiting review." /> : (
           <div className="space-y-2">
             {pendingClaims.map((c) => <ClaimCard key={c.id} claim={c} />)}
+          </div>
+        )
+      )}
+
+      {tab === 'Tag Suggestions' && (
+        pendingTagSuggestions.length === 0 ? <EmptyState title="Queue is clear" body="No vibe/amenity tag suggestions awaiting review." /> : (
+          <div className="space-y-2">
+            {pendingTagSuggestions.map((t) => <TagSuggestionCard key={t.id} suggestion={t} />)}
           </div>
         )
       )}
@@ -183,9 +194,10 @@ function CafeReviewCard({ cafe }: { cafe: Cafe }) {
           <p className="truncate font-mono text-[0.65rem] text-coffee/50">{cafe.neighborhood} · {cafe.city}, {cafe.state}</p>
         </div>
       </div>
-      <div className="mt-2.5 flex items-center justify-between gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         <EstablishmentTypeSelect cafe={cafe} />
-        <div className="flex shrink-0 gap-1.5">
+        <TagsButton cafe={cafe} />
+        <div className="ml-auto flex shrink-0 gap-1.5">
           <Button size="sm" onClick={() => setCafeStatus(cafe.id, 'approved')}>Publish</Button>
           <Button variant="danger" size="sm" onClick={() => setCafeStatus(cafe.id, 'rejected')}>Remove</Button>
         </div>
@@ -210,11 +222,59 @@ function PublishedCafeRow({ cafe }: { cafe: Cafe }) {
           {cafe.verifiedByJoe ? 'Verified' : 'Mark Verified'}
         </button>
       </div>
-      <div className="mt-2.5 flex items-center justify-between gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         <EstablishmentTypeSelect cafe={cafe} />
-        <Button variant="danger" size="sm" onClick={() => setCafeStatus(cafe.id, 'rejected')}>Remove</Button>
+        <TagsButton cafe={cafe} />
+        <Button variant="danger" size="sm" className="ml-auto" onClick={() => setCafeStatus(cafe.id, 'rejected')}>Remove</Button>
       </div>
     </div>
+  );
+}
+
+function TagsButton({ cafe }: { cafe: Cafe }) {
+  const [open, setOpen] = useState(false);
+  const vibeTagCount = cafe.tags.filter((t) => TAG_CATEGORY[t] && TAG_CATEGORY[t] !== 'Type of Establishment').length;
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="shrink-0 rounded-pill border border-racing-100 px-2.5 py-1 font-mono text-[0.65rem] text-coffee/70 hover:border-racing-300"
+      >
+        Tags{vibeTagCount > 0 ? ` (${vibeTagCount})` : ''}
+      </button>
+      {open && <TagEditorModal cafe={cafe} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+const VIBE_CATEGORIES = TAG_TAXONOMY.filter((t) => t.category !== 'Type of Establishment');
+
+function TagEditorModal({ cafe, onClose }: { cafe: Cafe; onClose: () => void }) {
+  const { toggleCafeTag } = useStore();
+  return (
+    <Modal open onClose={onClose} title={`Tags — ${cafe.name}`}>
+      <div className="space-y-4">
+        {VIBE_CATEGORIES.map((group) => (
+          <div key={group.category}>
+            <p className="mb-1.5 font-mono text-[0.65rem] uppercase tracking-eyebrow text-coffee/45">{group.category}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {group.tags.map((tag) => {
+                const active = cafe.tags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => toggleCafeTag(cafe.id, group.category, tag)}
+                    className={`rounded-pill border px-2.5 py-1 font-mono text-[0.7rem] transition-colors ${active ? 'border-racing-600 bg-racing-600 text-ivory' : 'border-racing-100 text-coffee/70 hover:border-racing-300'}`}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Modal>
   );
 }
 
@@ -283,6 +343,31 @@ function ClaimCard({ claim: c }: { claim: CafeClaim }) {
           Approve &amp; Verify
         </Button>
         <Button variant="danger" className="flex-1" onClick={() => setClaimStatus(c.id, 'rejected')}>Reject</Button>
+      </div>
+    </div>
+  );
+}
+
+function TagSuggestionCard({ suggestion: s }: { suggestion: CafeTagSuggestion }) {
+  const { resolveTagSuggestion } = useStore();
+  return (
+    <div className="rounded-card bg-ivory p-3 shadow-card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {s.cafeName ? (
+            <Link href={`/cafe/${s.cafeId}`} className="block truncate font-display text-lg text-racing-700 hover:underline">{s.cafeName}</Link>
+          ) : (
+            <p className="truncate font-display text-lg text-racing-700">Unknown café</p>
+          )}
+          <span className="mt-0.5 inline-block rounded-pill bg-amber/15 px-2 py-0.5 font-mono text-[0.65rem] text-amber-dark">{s.tag}</span>
+          <span className="ml-1.5 font-mono text-[0.6rem] text-coffee/40">{s.category}</span>
+        </div>
+        <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(s.createdAt)}</span>
+      </div>
+      <p className="mt-2 font-mono text-[0.65rem] text-coffee/45">Suggested by {s.submitterName || 'a member'}</p>
+      <div className="mt-3 flex gap-2">
+        <Button className="flex-1" onClick={() => resolveTagSuggestion(s.id, 'approved')}>Approve</Button>
+        <Button variant="danger" className="flex-1" onClick={() => resolveTagSuggestion(s.id, 'rejected')}>Reject</Button>
       </div>
     </div>
   );

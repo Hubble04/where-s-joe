@@ -188,7 +188,7 @@ export interface CafeClaim {
 
 export const NOTIFICATION_TYPES = [
   'like', 'comment', 'follow', 'suggestion_approved', 'suggestion_rejected',
-  'edit_resolved', 'claim_approved', 'claim_rejected',
+  'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected',
 ] as const;
 export type NotificationType = typeof NOTIFICATION_TYPES[number];
 
@@ -203,4 +203,25 @@ export interface AppNotification {
   createdAt: string;
   // joined
   actorName?: string;
+}
+
+export interface CafeNote {
+  id: string;
+  userId: string;
+  cafeId: string;
+  note: string;
+  updatedAt: string;
+}
+
+export interface CafeTagSuggestion {
+  id: string;
+  cafeId: string;
+  submittedBy: string | null;
+  category: string;
+  tag: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  // joined
+  cafeName?: string;
+  submitterName?: string;
 }

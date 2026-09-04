@@ -16,6 +16,8 @@ const ICONS: Record<NotificationType, string> = {
   edit_resolved: 'M20 6L9 17l-5-5',
   claim_approved: 'M20 6L9 17l-5-5',
   claim_rejected: 'M18 6L6 18M6 6l12 12',
+  tag_approved: 'M20 6L9 17l-5-5',
+  tag_rejected: 'M18 6L6 18M6 6l12 12',
 };
 
 export default function NotificationsPage() {

@@ -1,9 +1,9 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { TAG_CATEGORY } from '@/lib/brand';
+import { TAG_CATEGORY, TAG_TAXONOMY } from '@/lib/brand';
 import { EDIT_REASONS, type EditReason, CLAIM_ROLES, type ClaimRole } from '@/lib/types';
 import { groupTags, openLabel, cn } from '@/lib/utils';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
@@ -17,9 +17,10 @@ import { SectionTitle, SignInPrompt, Modal } from '@/components/ui';
 export default function CafePage({ params }: { params: { id: string } }) {
   const { id } = params;
   const router = useRouter();
-  const { me, getCafe, postsForCafe, savesForCafe, submitEditSuggestion, submitClaim } = useStore();
+  const { me, getCafe, postsForCafe, savesForCafe, noteForCafe, setCafeNote, submitEditSuggestion, submitClaim, suggestCafeTag } = useStore();
   const [authPrompt, setAuthPrompt] = useState(false);
   const [directionsPrompt, setDirectionsPrompt] = useState(false);
+  const [reviewPrompt, setReviewPrompt] = useState(false);
   const [editPrompt, setEditPrompt] = useState(false);
   const [editReason, setEditReason] = useState<EditReason | null>(null);
   const [editDetails, setEditDetails] = useState('');
@@ -30,6 +31,15 @@ export default function CafePage({ params }: { params: { id: string } }) {
   const [claimPhone, setClaimPhone] = useState('');
   const [claimNotes, setClaimNotes] = useState('');
   const [claimSent, setClaimSent] = useState(false);
+  const [tagPrompt, setTagPrompt] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<{ category: string; tag: string }[]>([]);
+  const [otherTag, setOtherTag] = useState('');
+  const [tagsSent, setTagsSent] = useState(false);
+  const storedNote = noteForCafe(id);
+  const [noteDraft, setNoteDraft] = useState(storedNote);
+  const [noteDirty, setNoteDirty] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+  useEffect(() => { if (!noteDirty) setNoteDraft(storedNote); }, [storedNote, noteDirty]);
   const cafe = getCafe(id);
 
   if (!cafe) {
@@ -83,6 +93,15 @@ export default function CafePage({ params }: { params: { id: string } }) {
               {cafe.address}
             </button>
           )}
+          <button
+            onClick={() => setReviewPrompt(true)}
+            className="mt-1.5 flex items-center gap-1 font-mono text-xs text-coffee/55 underline decoration-dotted underline-offset-2"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 fill-none stroke-current" strokeWidth={1.6}>
+              <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Leave a review
+          </button>
         </div>
 
         <div className="mt-4">
@@ -164,6 +183,28 @@ export default function CafePage({ params }: { params: { id: string } }) {
           )}
         </section>
 
+        {me && (
+          <section className="mt-6">
+            <SectionTitle eyebrow="Just for you" title="My Notes" />
+            <textarea
+              value={noteDraft}
+              onChange={(e) => { setNoteDraft(e.target.value); setNoteDirty(true); setNoteSaved(false); }}
+              placeholder="Ideas for next time, what you ordered, anything you want to remember…"
+              rows={3}
+              className="w-full resize-none rounded-card border border-racing-100 bg-ivory px-3 py-2.5 text-sm placeholder:text-coffee/40 focus:outline-none focus:ring-2 focus:ring-racing-600"
+            />
+            {noteDirty && (
+              <Button
+                size="sm" variant="outline" className="mt-2"
+                onClick={() => { setCafeNote(cafe.id, noteDraft.trim()); setNoteDirty(false); setNoteSaved(true); }}
+              >
+                Save note
+              </Button>
+            )}
+            {noteSaved && !noteDirty && <p className="mt-2 font-mono text-[0.65rem] text-coffee/45">Saved.</p>}
+          </section>
+        )}
+
         <section className="mt-6">
           <SectionTitle eyebrow="Find it" title="Location" />
           <MapView cafes={[cafe]} className="h-56 w-full" />
@@ -174,6 +215,12 @@ export default function CafePage({ params }: { params: { id: string } }) {
           className="mt-8 w-full rounded-pill border border-racing-100 px-4 py-2.5 text-center font-mono text-xs text-coffee/55 transition-colors hover:border-racing-300 hover:text-coffee/80"
         >
           Suggest an Edit
+        </button>
+        <button
+          onClick={() => (me ? setTagPrompt(true) : setAuthPrompt(true))}
+          className="mt-2 w-full rounded-pill border border-racing-100 px-4 py-2.5 text-center font-mono text-xs text-coffee/55 transition-colors hover:border-racing-300 hover:text-coffee/80"
+        >
+          Suggest a Vibe Tag
         </button>
         <button
           onClick={() => {
@@ -231,6 +278,69 @@ export default function CafePage({ params }: { params: { id: string } }) {
                 if (!editReason) return;
                 submitEditSuggestion(cafe.id, editReason, editDetails.trim() || undefined);
                 setEditSent(true);
+              }}
+            >
+              Submit
+            </Button>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={tagPrompt}
+        onClose={() => { setTagPrompt(false); setSelectedTags([]); setOtherTag(''); setTagsSent(false); }}
+        title="Suggest a Vibe Tag"
+      >
+        {tagsSent ? (
+          <div className="py-4 text-center">
+            <p className="font-heading text-base text-racing-700">Thanks for the tip!</p>
+            <p className="mt-1 font-mono text-xs text-coffee/60">Joe&rsquo;s team will take a look.</p>
+          </div>
+        ) : (
+          <>
+            <p className="mb-4 text-sm text-coffee/70">What&rsquo;s the vibe at {cafe.name}? Pick any that fit.</p>
+            <div className="mb-4 max-h-64 space-y-3 overflow-y-auto">
+              {TAG_TAXONOMY.filter((g) => g.category !== 'Type of Establishment').map((group) => {
+                const options = group.tags.filter((t) => !cafe.tags.includes(t));
+                if (options.length === 0) return null;
+                return (
+                  <div key={group.category}>
+                    <p className="mb-1.5 font-mono text-[0.65rem] uppercase tracking-eyebrow text-coffee/45">{group.category}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {options.map((tag) => {
+                        const active = selectedTags.some((s) => s.tag === tag && s.category === group.category);
+                        return (
+                          <button
+                            key={tag}
+                            onClick={() => setSelectedTags((prev) => (active
+                              ? prev.filter((s) => !(s.tag === tag && s.category === group.category))
+                              : [...prev, { category: group.category, tag }]))}
+                            className={cn(
+                              'rounded-pill border px-2.5 py-1 font-mono text-[0.7rem] transition-colors',
+                              active ? 'border-racing-600 bg-racing-600 text-ivory' : 'border-racing-100 text-coffee/70 hover:border-racing-300',
+                            )}
+                          >
+                            {tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <label className="mb-1 block font-mono text-xs text-coffee/60">Don&rsquo;t see it? Add your own (optional)</label>
+            <input
+              value={otherTag} onChange={(e) => setOtherTag(e.target.value)}
+              placeholder="e.g. Great for first dates"
+              className="mb-5 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-racing-600"
+            />
+            <Button
+              variant="primary" className="w-full" disabled={selectedTags.length === 0 && !otherTag.trim()}
+              onClick={() => {
+                selectedTags.forEach(({ category, tag }) => suggestCafeTag(cafe.id, category, tag));
+                if (otherTag.trim()) suggestCafeTag(cafe.id, 'Other', otherTag.trim());
+                setTagsSent(true);
               }}
             >
               Submit
@@ -313,6 +423,29 @@ export default function CafePage({ params }: { params: { id: string } }) {
             Google Maps
           </a>
         </div>
+      </Modal>
+
+      <Modal open={reviewPrompt} onClose={() => setReviewPrompt(false)} title="Leave a review">
+        <p className="mb-4 text-sm text-coffee/70">Leave a review for {cafe.name} on:</p>
+        <div className="flex flex-col gap-2">
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([cafe.name, cafe.address, cafe.city, cafe.state].filter(Boolean).join(' '))}`}
+            target="_blank" rel="noreferrer" onClick={() => setReviewPrompt(false)}
+            className="block w-full rounded-pill border border-racing-200 px-4 py-2.5 text-center font-mono text-sm font-medium text-racing-700 transition-colors hover:bg-racing-50"
+          >
+            Google
+          </a>
+          <a
+            href={`https://www.yelp.com/search?find_desc=${encodeURIComponent(cafe.name)}&find_loc=${encodeURIComponent([cafe.city, cafe.state].filter(Boolean).join(', '))}`}
+            target="_blank" rel="noreferrer" onClick={() => setReviewPrompt(false)}
+            className="block w-full rounded-pill border border-racing-200 px-4 py-2.5 text-center font-mono text-sm font-medium text-racing-700 transition-colors hover:bg-racing-50"
+          >
+            Yelp
+          </a>
+        </div>
+        <p className="mt-4 font-mono text-[0.65rem] text-coffee/45">
+          Opens a search for {cafe.name} — tap through to their listing to leave your review.
+        </p>
       </Modal>
     </div>
   );

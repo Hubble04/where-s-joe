@@ -4,7 +4,7 @@ import { createContext, useContext } from 'react';
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
-  AppNotification,
+  AppNotification, CafeNote, CafeTagSuggestion,
 } from './types';
 
 /**
@@ -27,6 +27,8 @@ export interface StoreValue {
   editSuggestions: CafeEditSuggestion[];
   claims: CafeClaim[];
   notifications: AppNotification[];
+  notes: CafeNote[];
+  tagSuggestions: CafeTagSuggestion[];
   follows: { followerId: string; followingId: string }[];
 
   getUser: (id: string) => Profile;
@@ -36,6 +38,7 @@ export interface StoreValue {
   commentsFor: (postId: string) => Comment[];
   isFollowing: (userId: string) => boolean;
   savesForCafe: (cafeId: string) => CafeSave[];
+  noteForCafe: (cafeId: string) => string;
   hasSave: (cafeId: string, type: SaveType) => boolean;
   savesByType: (type: SaveType) => CafeSave[];
   listsForMe: () => CustomList[];
@@ -74,6 +77,10 @@ export interface StoreValue {
   markAllNotificationsRead: () => void;
   enablePush: (subscription: PushSubscriptionJSON) => Promise<{ ok: boolean; error?: string }>;
   disablePush: (endpoint: string) => void;
+  setCafeNote: (cafeId: string, note: string) => void;
+  toggleCafeTag: (cafeId: string, category: string, tag: string) => void;
+  suggestCafeTag: (cafeId: string, category: string, tag: string) => void;
+  resolveTagSuggestion: (id: string, status: 'approved' | 'rejected') => void;
 }
 
 export const StoreContext = createContext<StoreValue | null>(null);

@@ -1,18 +1,23 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { QUICK_FILTERS } from '@/lib/brand';
+import type { Cafe } from '@/lib/types';
 import { isOpenNow, distanceMiles } from '@/lib/utils';
 import { CafeCard, CafeCardSkeleton } from '@/components/CafeCard';
 import { MapView } from '@/components/MapView';
-import { SearchBar, Chip, EmptyState, SectionTitle } from '@/components/ui';
+import { SearchBar, Chip, EmptyState, SectionTitle, Modal } from '@/components/ui';
 import { BeanCard } from '@/components/BeanCard';
 import { Button } from '@/components/Button';
+import { ImageWithFallback } from '@/components/ImageWithFallback';
 
 const PAGE_SIZE = 20;
 const NEARBY_RADIUS_MILES = 15;
+const SURPRISE_RADIUS_MILES = 20;
 
 export default function ExplorePage() {
+  const router = useRouter();
   const { ready, cafes, me, savesByType, getCafe } = useStore();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState<string[]>([]);
@@ -22,6 +27,10 @@ export default function ExplorePage() {
   const [locationDenied, setLocationDenied] = useState(false);
   const [nudgedCafeIds, setNudgedCafeIds] = useState<Set<string>>(new Set());
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [surpriseOpen, setSurpriseOpen] = useState(false);
+  const [surpriseLoading, setSurpriseLoading] = useState(false);
+  const [surpriseError, setSurpriseError] = useState('');
+  const [surpriseCafe, setSurpriseCafe] = useState<Cafe | null>(null);
 
   function toggleFilter(f: string) {
     setActive((a) => (a.includes(f) ? a.filter((x) => x !== f) : [...a, f]));
@@ -96,6 +105,35 @@ export default function ExplorePage() {
   // actually published, regardless of who's logged in.
   const publishedCafes = useMemo(() => cafes.filter((c) => c.status === 'approved'), [cafes]);
 
+  function pickFrom(o: { lat: number; lng: number }, exclude?: string) {
+    const candidates = publishedCafes.filter((c) => c.id !== exclude && distanceMiles(o, { lat: c.lat, lng: c.lng }) <= SURPRISE_RADIUS_MILES);
+    if (candidates.length === 0) {
+      setSurpriseError(`No cafés within ${SURPRISE_RADIUS_MILES} mi of you yet.`);
+      setSurpriseCafe(null);
+    } else {
+      setSurpriseError('');
+      setSurpriseCafe(candidates[Math.floor(Math.random() * candidates.length)]);
+    }
+    setSurpriseLoading(false);
+  }
+
+  function surpriseMe() {
+    setSurpriseOpen(true);
+    setSurpriseCafe(null);
+    setSurpriseError('');
+    if (origin) { pickFrom(origin); return; }
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setSurpriseError('Location isn’t available on this device.');
+      return;
+    }
+    setSurpriseLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { const o = { lat: pos.coords.latitude, lng: pos.coords.longitude }; setOrigin(o); pickFrom(o); },
+      () => { setSurpriseLoading(false); setSurpriseError('Turn on location access to get a surprise pick.'); },
+      { timeout: 8000 },
+    );
+  }
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = publishedCafes.filter((c) => {
@@ -142,6 +180,13 @@ export default function ExplorePage() {
       <div className="mt-4">
         <SearchBar value={query} onChange={setQuery} />
       </div>
+
+      <button
+        onClick={surpriseMe}
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-pill bg-racing-600 px-4 py-2.5 font-mono text-sm text-ivory transition-colors hover:bg-racing-700"
+      >
+        🎲 Surprise Me
+      </button>
 
       <div className="rail mt-3">
         {QUICK_FILTERS.map((f) => (
@@ -204,6 +249,30 @@ export default function ExplorePage() {
           </div>
         </div>
       )}
+
+      <Modal open={surpriseOpen} onClose={() => setSurpriseOpen(false)} title="✨ Your surprise pick!">
+        {surpriseLoading ? (
+          <p className="py-6 text-center font-mono text-sm text-coffee/60">Locating…</p>
+        ) : surpriseError ? (
+          <div className="py-2 text-center">
+            <p className="font-mono text-sm text-coffee/70">{surpriseError}</p>
+            <Button variant="ghost" className="mt-4" onClick={() => setSurpriseOpen(false)}>Close</Button>
+          </div>
+        ) : surpriseCafe ? (
+          <>
+            <ImageWithFallback src={surpriseCafe.coverPhotoUrl} alt={surpriseCafe.name} seed={surpriseCafe.name} className="aspect-[16/10] w-full rounded-card" />
+            <h3 className="mt-3 font-display text-2xl text-racing-700">{surpriseCafe.name}</h3>
+            <p className="font-mono text-xs text-coffee/60">
+              {surpriseCafe.neighborhood} · {surpriseCafe.city}, {surpriseCafe.state}
+              {origin && <> · {distanceMiles(origin, { lat: surpriseCafe.lat, lng: surpriseCafe.lng }).toFixed(1)} mi away</>}
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Button variant="ghost" className="flex-1" onClick={() => origin && pickFrom(origin, surpriseCafe.id)}>Surprise me again</Button>
+              <Button className="flex-1" onClick={() => { setSurpriseOpen(false); router.push(`/cafe/${surpriseCafe.id}`); }}>Take me there</Button>
+            </div>
+          </>
+        ) : null}
+      </Modal>
     </div>
   );
 }

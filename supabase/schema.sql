@@ -74,6 +74,15 @@ create table if not exists public.cafe_tags (
 );
 create index if not exists cafe_tags_cafe_idx on public.cafe_tags (cafe_id);
 
+-- Prevent duplicate tag rows (needed so admin toggles / suggestion approvals
+-- can safely upsert instead of risking dupes).
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'cafe_tags_unique') then
+    alter table public.cafe_tags add constraint cafe_tags_unique unique (cafe_id, category, tag);
+  end if;
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- posts + photos + comments + likes
 -- ---------------------------------------------------------------------------
@@ -226,7 +235,7 @@ create table if not exists public.notifications (
   actor_id   uuid references auth.users (id) on delete set null,
   type       text not null check (type in (
     'like', 'comment', 'follow', 'suggestion_approved', 'suggestion_rejected',
-    'edit_resolved', 'claim_approved', 'claim_rejected'
+    'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected'
   )),
   message    text not null,
   link       text,
@@ -235,6 +244,13 @@ create table if not exists public.notifications (
 );
 create index if not exists notifications_user_idx on public.notifications (user_id, created_at desc);
 create index if not exists notifications_user_unread_idx on public.notifications (user_id) where not read;
+
+-- Widen the type check for tables created before tag_approved/tag_rejected existed.
+alter table public.notifications drop constraint if exists notifications_type_check;
+alter table public.notifications add constraint notifications_type_check check (type in (
+  'like', 'comment', 'follow', 'suggestion_approved', 'suggestion_rejected',
+  'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected'
+));
 
 -- ---------------------------------------------------------------------------
 -- push_subscriptions  (one row per browser/device a user has enabled push on)
@@ -248,6 +264,34 @@ create table if not exists public.push_subscriptions (
   created_at timestamptz not null default now()
 );
 create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+
+-- ---------------------------------------------------------------------------
+-- cafe_notes  (one private, evolving note per user per café)
+-- ---------------------------------------------------------------------------
+create table if not exists public.cafe_notes (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  cafe_id    uuid not null references public.cafes (id) on delete cascade,
+  note       text not null default '',
+  updated_at timestamptz not null default now(),
+  unique (user_id, cafe_id)
+);
+create index if not exists cafe_notes_user_idx on public.cafe_notes (user_id);
+
+-- ---------------------------------------------------------------------------
+-- cafe_tag_suggestions  (a user proposing a Vibe/Ambiance-style tag for a café)
+-- ---------------------------------------------------------------------------
+create table if not exists public.cafe_tag_suggestions (
+  id           uuid primary key default gen_random_uuid(),
+  cafe_id      uuid not null references public.cafes (id) on delete cascade,
+  submitted_by uuid references auth.users (id) on delete set null,
+  category     text not null,
+  tag          text not null,
+  status       text not null default 'pending' check (status in ('pending','approved','rejected')),
+  created_at   timestamptz not null default now()
+);
+create index if not exists cafe_tag_suggestions_cafe_idx on public.cafe_tag_suggestions (cafe_id);
+create index if not exists cafe_tag_suggestions_status_idx on public.cafe_tag_suggestions (status);
 
 -- =========================================================================
 -- Helper: is the current user an admin?
@@ -281,6 +325,8 @@ alter table public.cafe_edit_suggestions enable row level security;
 alter table public.cafe_claims enable row level security;
 alter table public.notifications enable row level security;
 alter table public.push_subscriptions enable row level security;
+alter table public.cafe_notes enable row level security;
+alter table public.cafe_tag_suggestions enable row level security;
 
 -- profiles: world-readable; self-write; admins may update (e.g. grant roles).
 drop policy if exists p_profiles_read on public.profiles;
@@ -450,6 +496,25 @@ create policy p_push_subs_write on public.push_subscriptions for insert to authe
 drop policy if exists p_push_subs_delete on public.push_subscriptions;
 create policy p_push_subs_delete on public.push_subscriptions for delete to authenticated
   using (user_id = auth.uid());
+
+-- cafe_notes: fully private to owner.
+drop policy if exists p_cafe_notes_all on public.cafe_notes;
+create policy p_cafe_notes_all on public.cafe_notes for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- cafe_tag_suggestions: submitter sees/writes own; admin sees/manages all.
+drop policy if exists p_tag_suggestions_read on public.cafe_tag_suggestions;
+create policy p_tag_suggestions_read on public.cafe_tag_suggestions for select to authenticated
+  using (submitted_by = auth.uid() or public.is_admin());
+drop policy if exists p_tag_suggestions_write on public.cafe_tag_suggestions;
+create policy p_tag_suggestions_write on public.cafe_tag_suggestions for insert to authenticated
+  with check (submitted_by = auth.uid());
+drop policy if exists p_tag_suggestions_admin on public.cafe_tag_suggestions;
+create policy p_tag_suggestions_admin on public.cafe_tag_suggestions for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+drop policy if exists p_tag_suggestions_delete on public.cafe_tag_suggestions;
+create policy p_tag_suggestions_delete on public.cafe_tag_suggestions for delete to authenticated
+  using (public.is_admin());
 
 -- =========================================================================
 -- Auto-create a profile row on signup (username from metadata or email)
