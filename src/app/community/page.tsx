@@ -11,7 +11,7 @@ import { Button } from '@/components/Button';
 
 export default function CommunityPage() {
   const { me, feedPosts } = useStore();
-  const [mode, setMode] = useState<string>('Global');
+  const [mode, setMode] = useState<string>('Nearby');
   const [composing, setComposing] = useState(false);
   const [authPrompt, setAuthPrompt] = useState(false);
 

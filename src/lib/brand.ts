@@ -113,7 +113,7 @@ export const MILK_TYPES = [
   'Whole', 'Skim', '2%', 'Oat', 'Almond', 'Soy', 'Coconut', 'Macadamia', 'None',
 ] as const;
 
-export const FEED_MODES = ['Nearby', 'Trending', 'Following', 'Global'] as const;
+export const FEED_MODES = ['Nearby', 'Trending', 'Following'] as const;
 export type FeedMode = (typeof FEED_MODES)[number];
 
 export const VISIBILITY = ['Public', 'Followers only', 'Private'] as const;
