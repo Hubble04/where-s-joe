@@ -27,6 +27,7 @@ function ActionButton({ active, onClick, activeColor, icon, label }: {
 export function SaveActions({ cafe, onNeedAuth }: { cafe: Cafe; onNeedAuth: () => void }) {
   const { me, hasSave, toggleSave, sipCafe } = useStore();
   const [modal, setModal] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const wtg = hasSave(cafe.id, 'want_to_go');
   const sipped = hasSave(cafe.id, 'sipped_there');
@@ -35,14 +36,26 @@ export function SaveActions({ cafe, onNeedAuth }: { cafe: Cafe; onNeedAuth: () =
   const guard = (fn: () => void) => () => (me ? fn() : onNeedAuth());
 
   async function share() {
-    const url = typeof window !== 'undefined' ? window.location.href : '';
-    if (navigator.share) { try { await navigator.share({ title: cafe.name, url }); } catch { /* cancelled */ } }
-    else { try { await navigator.clipboard.writeText(url); } catch { /* noop */ } }
+    const url = typeof window !== 'undefined' ? `${window.location.origin}/cafe/${cafe.id}` : '';
+    if (navigator.share) {
+      try { await navigator.share({ title: cafe.name, text: `Check out ${cafe.name} on Where's Joe?`, url }); } catch { /* cancelled */ }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* noop */ }
   }
 
   return (
     <>
-      <div className="flex gap-2">
+      <div className="relative flex gap-2">
+        {copied && (
+          <span className="absolute -top-9 right-0 rounded-pill bg-racing-700 px-3 py-1 font-mono text-[0.65rem] text-ivory shadow-card">
+            Link copied!
+          </span>
+        )}
         <ActionButton
           active={wtg} activeColor="border-navy bg-navy/10 text-navy" onClick={guard(() => toggleSave(cafe.id, 'want_to_go'))}
           label="Want To Go"

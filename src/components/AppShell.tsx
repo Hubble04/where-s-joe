@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { StoreProvider } from '@/lib/store';
 import { TopBar } from './TopBar';
 import { BottomNav } from './BottomNav';
+import { Onboarding } from './Onboarding';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -17,6 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 pb-2">{children}</main>
         <BottomNav />
       </div>
+      <Onboarding />
     </StoreProvider>
   );
 }
