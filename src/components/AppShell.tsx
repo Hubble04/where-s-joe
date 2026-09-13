@@ -4,6 +4,7 @@ import { StoreProvider } from '@/lib/store';
 import { TopBar } from './TopBar';
 import { BottomNav } from './BottomNav';
 import { Onboarding } from './Onboarding';
+import { ToastProvider } from './Toast';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -12,13 +13,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
   return (
-    <StoreProvider>
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-ivory">
-        <TopBar />
-        <main className="flex-1 pb-2">{children}</main>
-        <BottomNav />
-      </div>
-      <Onboarding />
-    </StoreProvider>
+    <ToastProvider>
+      <StoreProvider>
+        <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-ivory">
+          <TopBar />
+          <main className="flex-1 pb-2">{children}</main>
+          <BottomNav />
+        </div>
+        <Onboarding />
+      </StoreProvider>
+    </ToastProvider>
   );
 }

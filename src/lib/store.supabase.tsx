@@ -12,6 +12,7 @@ import type {
 import { getSupabaseBrowser } from './supabase/client';
 import { StoreContext, type StoreValue } from './storeContext';
 import { TAG_CATEGORY } from './brand';
+import { useToast } from '@/components/Toast';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -119,6 +120,7 @@ const FALLBACK_USER: Omit<Profile, 'id'> = {
 
 export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const supabase = useMemo(() => getSupabaseBrowser()!, []);
+  const toast = useToast();
 
   const [meId, setMeId] = useState<string | null>(null);
   const [authResolved, setAuthResolved] = useState(false);
@@ -410,9 +412,9 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     if (patch.defaultPostVisibility !== undefined) dbPatch.default_post_visibility = patch.defaultPostVisibility;
     setProfiles((prev) => prev.map((p) => (p.id === meId ? { ...p, ...patch } : p)));
     supabase.from('profiles').update(dbPatch).eq('id', meId).then(({ error }: any) => {
-      if (error) { console.error(error); loadProfiles(); }
+      if (error) { console.error(error); loadProfiles(); toast("Couldn't save your settings — please try again."); }
     });
-  }, [meId, supabase, loadProfiles]);
+  }, [meId, supabase, loadProfiles, toast]);
 
   // --- notifications ------------------------------------------------------
   /** Fire-and-forget: create a notification for someone else, honoring their category preference. */
@@ -476,17 +478,17 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     if (existing) {
       setLikeRows((prev) => prev.filter((l) => !(l.postId === postId && l.userId === meId)));
       supabase.from('likes').delete().eq('post_id', postId).eq('user_id', meId).then(({ error }: any) => {
-        if (error) { console.error(error); setLikeRows((prev) => [...prev, existing]); }
+        if (error) { console.error(error); setLikeRows((prev) => [...prev, existing]); toast("Couldn't unlike that — please try again."); }
       });
     } else {
       setLikeRows((prev) => [...prev, { postId, userId: meId }]);
       supabase.from('likes').insert({ post_id: postId, user_id: meId }).then(({ error }: any) => {
-        if (error) { console.error(error); setLikeRows((prev) => prev.filter((l) => !(l.postId === postId && l.userId === meId))); }
+        if (error) { console.error(error); setLikeRows((prev) => prev.filter((l) => !(l.postId === postId && l.userId === meId))); toast("Couldn't like that post — please try again."); }
       });
       const post = posts.find((p) => p.id === postId);
       if (post) notify(post.userId, 'like', `${me?.name ?? 'Someone'} liked your post`, '/profile', 'notifyLikesComments');
     }
-  }, [meId, likeRows, supabase, posts, me, notify]);
+  }, [meId, likeRows, supabase, posts, me, notify, toast]);
 
   const addComment = useCallback((postId: string, content: string) => {
     if (!meId || !content.trim()) return;
@@ -494,12 +496,12 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     const optimistic: Comment = { id: tempId, postId, userId: meId, content: content.trim(), createdAt: new Date().toISOString() };
     setComments((prev) => [...prev, optimistic]);
     supabase.from('comments').insert({ post_id: postId, user_id: meId, content: content.trim() }).select().single().then(({ data, error }: any) => {
-      if (error) { console.error(error); setComments((prev) => prev.filter((c) => c.id !== tempId)); }
+      if (error) { console.error(error); setComments((prev) => prev.filter((c) => c.id !== tempId)); toast("Couldn't post your comment — please try again."); }
       else if (data) setComments((prev) => prev.map((c) => (c.id === tempId ? rowToComment(data) : c)));
     });
     const post = posts.find((p) => p.id === postId);
     if (post) notify(post.userId, 'comment', `${me?.name ?? 'Someone'} commented on your post`, '/profile', 'notifyLikesComments');
-  }, [meId, supabase, posts, me, notify]);
+  }, [meId, supabase, posts, me, notify, toast]);
 
   const toggleFollow = useCallback((userId: string) => {
     if (!meId || userId === meId) return;
@@ -507,16 +509,16 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     if (exists) {
       setFollows((prev) => prev.filter((f) => !(f.followerId === meId && f.followingId === userId)));
       supabase.from('follows').delete().eq('follower_id', meId).eq('following_id', userId).then(({ error }: any) => {
-        if (error) { console.error(error); loadFollows(); }
+        if (error) { console.error(error); loadFollows(); toast("Couldn't unfollow — please try again."); }
       });
     } else {
       setFollows((prev) => [...prev, { followerId: meId, followingId: userId }]);
       supabase.from('follows').insert({ follower_id: meId, following_id: userId }).then(({ error }: any) => {
-        if (error) { console.error(error); loadFollows(); }
+        if (error) { console.error(error); loadFollows(); toast("Couldn't follow — please try again."); }
       });
       notify(userId, 'follow', `${me?.name ?? 'Someone'} started following you`, '/profile', 'notifyFollows');
     }
-  }, [meId, follows, supabase, loadFollows, me, notify]);
+  }, [meId, follows, supabase, loadFollows, me, notify, toast]);
 
   const createPost = useCallback((i: { caption: string; cafeId: string | null; drinkTag: string | null; visibility: Visibility; photos: string[] }) => {
     if (!meId) return;
@@ -524,13 +526,13 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       const { data: postRow, error } = await supabase.from('posts').insert({
         user_id: meId, cafe_id: i.cafeId, caption: i.caption, drink_tag: i.drinkTag, visibility: i.visibility,
       }).select().single();
-      if (error || !postRow) { console.error(error); return; }
+      if (error || !postRow) { console.error(error); toast("Couldn't share your post — please try again."); return; }
       if (i.photos.length > 0) {
         await supabase.from('post_photos').insert(i.photos.map((url, idx) => ({ post_id: postRow.id, image_url: url, position: idx })));
       }
       setPosts((prev) => [rowToPost(postRow, i.photos), ...prev]);
     })();
-  }, [meId, supabase]);
+  }, [meId, supabase, toast]);
 
   const toggleSave = useCallback((cafeId: string, type: SaveType) => {
     if (!meId) return;
@@ -538,17 +540,17 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     if (existing) {
       setMySaves((prev) => prev.filter((s) => s.id !== existing.id));
       supabase.from('user_cafe_saves').delete().eq('id', existing.id).then(({ error }: any) => {
-        if (error) { console.error(error); setMySaves((prev) => [...prev, existing]); }
+        if (error) { console.error(error); setMySaves((prev) => [...prev, existing]); toast("Couldn't update that — please try again."); }
       });
     } else {
       const tempId = 'tmp-' + uid();
       setMySaves((prev) => [...prev, { id: tempId, userId: meId, cafeId, saveType: type, createdAt: new Date().toISOString() }]);
       supabase.from('user_cafe_saves').insert({ user_id: meId, cafe_id: cafeId, save_type: type }).select().single().then(({ data, error }: any) => {
-        if (error) { console.error(error); setMySaves((prev) => prev.filter((s) => s.id !== tempId)); }
+        if (error) { console.error(error); setMySaves((prev) => prev.filter((s) => s.id !== tempId)); toast("Couldn't save that — please try again."); }
         else if (data) setMySaves((prev) => prev.map((s) => (s.id === tempId ? rowToSave(data) : s)));
       });
     }
-  }, [meId, mySaves, supabase]);
+  }, [meId, mySaves, supabase, toast]);
 
   const sipCafe = useCallback((cafeId: string, d: { note?: string; orderedDrink?: string; milkType?: string; recommend?: boolean | null }) => {
     if (!meId) return;
@@ -565,10 +567,10 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
         user_id: meId, cafe_id: cafeId, save_type: 'sipped_there',
         note: d.note || null, ordered_drink: d.orderedDrink || null, milk_type: d.milkType || null, recommend: d.recommend ?? null,
       }, { onConflict: 'user_id,cafe_id,save_type' }).select().single();
-      if (error) { console.error(error); loadMySaves(meId); }
+      if (error) { console.error(error); loadMySaves(meId); toast("Couldn't save your visit — please try again."); }
       else if (data) setMySaves((prev) => prev.map((s) => (s.id === tempId ? rowToSave(data) : s)));
     })();
-  }, [meId, mySaves, supabase, loadMySaves]);
+  }, [meId, mySaves, supabase, loadMySaves, toast]);
 
   const setCafeNote = useCallback((cafeId: string, note: string) => {
     if (!meId) return;
@@ -582,35 +584,35 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     supabase.from('cafe_notes').upsert({
       user_id: meId, cafe_id: cafeId, note, updated_at: now,
     }, { onConflict: 'user_id,cafe_id' }).select().single().then(({ data, error }: any) => {
-      if (error) { console.error(error); loadNotes(meId); }
+      if (error) { console.error(error); loadNotes(meId); toast("Couldn't save your note — please try again."); }
       else if (data) setNotes((prev) => prev.map((n) => (n.cafeId === cafeId ? rowToNote(data) : n)));
     });
-  }, [meId, notes, supabase, loadNotes]);
+  }, [meId, notes, supabase, loadNotes, toast]);
 
   const createList = useCallback((name: string, description?: string) => {
     const tempId = 'tmp-' + uid();
     if (!meId) return tempId;
     setMyLists((prev) => [...prev, { id: tempId, userId: meId, name, description: description || '', createdAt: new Date().toISOString(), cafeIds: [] }]);
     supabase.from('custom_lists').insert({ user_id: meId, name, description: description || '' }).select().single().then(({ data, error }: any) => {
-      if (error) { console.error(error); setMyLists((prev) => prev.filter((l) => l.id !== tempId)); }
+      if (error) { console.error(error); setMyLists((prev) => prev.filter((l) => l.id !== tempId)); toast("Couldn't create your list — please try again."); }
       else if (data) setMyLists((prev) => prev.map((l) => (l.id === tempId ? { id: data.id, userId: data.user_id, name: data.name, description: data.description ?? '', createdAt: data.created_at, cafeIds: [] } : l)));
     });
     return tempId;
-  }, [meId, supabase]);
+  }, [meId, supabase, toast]);
 
   const addToList = useCallback((listId: string, cafeId: string) => {
     setMyLists((prev) => prev.map((l) => (l.id === listId && !l.cafeIds?.includes(cafeId) ? { ...l, cafeIds: [...(l.cafeIds || []), cafeId] } : l)));
     supabase.from('custom_list_items').insert({ list_id: listId, cafe_id: cafeId }).then(({ error }: any) => {
-      if (error) { console.error(error); loadMyLists(meId!); }
+      if (error) { console.error(error); loadMyLists(meId!); toast("Couldn't add that to your list — please try again."); }
     });
-  }, [supabase, loadMyLists, meId]);
+  }, [supabase, loadMyLists, meId, toast]);
 
   const removeFromList = useCallback((listId: string, cafeId: string) => {
     setMyLists((prev) => prev.map((l) => (l.id === listId ? { ...l, cafeIds: (l.cafeIds || []).filter((x) => x !== cafeId) } : l)));
     supabase.from('custom_list_items').delete().eq('list_id', listId).eq('cafe_id', cafeId).then(({ error }: any) => {
-      if (error) { console.error(error); loadMyLists(meId!); }
+      if (error) { console.error(error); loadMyLists(meId!); toast("Couldn't remove that from your list — please try again."); }
     });
-  }, [supabase, loadMyLists, meId]);
+  }, [supabase, loadMyLists, meId, toast]);
 
   const suggestCafe = useCallback((i: Omit<SuggestedCafe, 'id' | 'submittedBy' | 'moderationStatus' | 'createdAt' | 'submitterName'>) => {
     if (!meId) return;
@@ -621,10 +623,10 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       description: i.description, website: i.website ?? null, instagram: i.instagram ?? null,
       photo_url: i.photoUrl ?? null, tags: i.tags ?? [],
     }).select().single().then(({ data, error }: any) => {
-      if (error) { console.error(error); setSuggestions((prev) => prev.filter((s) => s.id !== tempId)); }
+      if (error) { console.error(error); setSuggestions((prev) => prev.filter((s) => s.id !== tempId)); toast("Couldn't submit your suggestion — please try again."); }
       else if (data) setSuggestions((prev) => prev.map((s) => (s.id === tempId ? rowToSuggestion(data) : s)));
     });
-  }, [meId, supabase]);
+  }, [meId, supabase, toast]);
 
   const approveSuggestion = useCallback((id: string, coords: { lat: number; lng: number }) => {
     (async () => {
@@ -636,7 +638,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
         cover_photo_url: sug.photoUrl ?? '', status: 'approved',
         latitude: coords.lat, longitude: coords.lng,
       }).select().single();
-      if (e1) { console.error(e1); return; }
+      if (e1) { console.error(e1); toast("Couldn't approve that suggestion — please try again."); return; }
       if (sug.tags && sug.tags.length > 0 && newCafe) {
         await supabase.from('cafe_tags').insert(sug.tags.map((tag) => ({ cafe_id: newCafe.id, category: 'Suggested', tag })));
       }
@@ -645,30 +647,30 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       notify(sug.submittedBy, 'suggestion_approved', `Your café suggestion "${sug.name}" was approved!`, '/profile', 'notifyActivityUpdates');
       await Promise.all([loadCafes(), loadSuggestions()]);
     })();
-  }, [suggestions, supabase, loadCafes, loadSuggestions, notify]);
+  }, [suggestions, supabase, loadCafes, loadSuggestions, notify, toast]);
 
   const rejectSuggestion = useCallback((id: string) => {
     const sug = suggestions.find((s) => s.id === id);
     setSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, moderationStatus: 'rejected' } : s)));
     supabase.from('suggested_cafes').update({ moderation_status: 'rejected' }).eq('id', id).then(({ error }: any) => {
-      if (error) { console.error(error); loadSuggestions(); }
+      if (error) { console.error(error); loadSuggestions(); toast("Couldn't update that suggestion — please try again."); }
     });
     if (sug) notify(sug.submittedBy, 'suggestion_rejected', `Your café suggestion "${sug.name}" wasn't approved`, '/profile', 'notifyActivityUpdates');
-  }, [supabase, loadSuggestions, suggestions, notify]);
+  }, [supabase, loadSuggestions, suggestions, notify, toast]);
 
   const deletePost = useCallback((id: string) => {
     setPosts((prev) => prev.filter((p) => p.id !== id));
     supabase.from('posts').delete().eq('id', id).then(({ error }: any) => {
-      if (error) { console.error(error); loadPosts(); }
+      if (error) { console.error(error); loadPosts(); toast("Couldn't delete that post — please try again."); }
     });
-  }, [supabase, loadPosts]);
+  }, [supabase, loadPosts, toast]);
 
   const setCafeStatus = useCallback((cafeId: string, status: Cafe['status']) => {
     setCafes((prev) => prev.map((c) => (c.id === cafeId ? { ...c, status } : c)));
     supabase.from('cafes').update({ status }).eq('id', cafeId).then(({ error }: any) => {
-      if (error) { console.error(error); loadCafes(); }
+      if (error) { console.error(error); loadCafes(); toast("Couldn't update café status — please try again."); }
     });
-  }, [supabase, loadCafes]);
+  }, [supabase, loadCafes, toast]);
 
   const setEstablishmentType = useCallback((cafeId: string, type: string) => {
     setCafes((prev) => prev.map((c) => {
@@ -678,13 +680,13 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     }));
     (async () => {
       const { error: delErr } = await supabase.from('cafe_tags').delete().eq('cafe_id', cafeId).eq('category', 'Type of Establishment');
-      if (delErr) { console.error(delErr); loadCafes(); return; }
+      if (delErr) { console.error(delErr); loadCafes(); toast("Couldn't update establishment type — please try again."); return; }
       if (type) {
         const { error: insErr } = await supabase.from('cafe_tags').insert({ cafe_id: cafeId, category: 'Type of Establishment', tag: type });
-        if (insErr) { console.error(insErr); loadCafes(); }
+        if (insErr) { console.error(insErr); loadCafes(); toast("Couldn't update establishment type — please try again."); }
       }
     })();
-  }, [supabase, loadCafes]);
+  }, [supabase, loadCafes, toast]);
 
   const toggleCafeTag = useCallback((cafeId: string, category: string, tag: string) => {
     const cafe = cafes.find((c) => c.id === cafeId);
@@ -695,13 +697,13 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     (async () => {
       if (has) {
         const { error } = await supabase.from('cafe_tags').delete().eq('cafe_id', cafeId).eq('category', category).eq('tag', tag);
-        if (error) { console.error(error); loadCafes(); }
+        if (error) { console.error(error); loadCafes(); toast("Couldn't update that tag — please try again."); }
       } else {
         const { error } = await supabase.from('cafe_tags').upsert({ cafe_id: cafeId, category, tag }, { onConflict: 'cafe_id,category,tag' });
-        if (error) { console.error(error); loadCafes(); }
+        if (error) { console.error(error); loadCafes(); toast("Couldn't update that tag — please try again."); }
       }
     })();
-  }, [cafes, supabase, loadCafes]);
+  }, [cafes, supabase, loadCafes, toast]);
 
   const submitEditSuggestion = useCallback((cafeId: string, reason: EditReason, details?: string) => {
     if (!meId) return;
@@ -713,22 +715,22 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     supabase.from('cafe_edit_suggestions').insert({
       cafe_id: cafeId, submitted_by: meId, reason, details: details ?? '',
     }).select().single().then(({ data, error }: any) => {
-      if (error) { console.error(error); setEditSuggestions((prev) => prev.filter((s) => s.id !== tempId)); }
+      if (error) { console.error(error); setEditSuggestions((prev) => prev.filter((s) => s.id !== tempId)); toast("Couldn't submit your edit — please try again."); }
       else if (data) setEditSuggestions((prev) => prev.map((s) => (s.id === tempId ? rowToEditSuggestion(data) : s)));
     });
-  }, [meId, supabase]);
+  }, [meId, supabase, toast]);
 
   const resolveEditSuggestion = useCallback((id: string) => {
     const sug = editSuggestions.find((s) => s.id === id);
     setEditSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, status: 'resolved' } : s)));
     supabase.from('cafe_edit_suggestions').update({ status: 'resolved' }).eq('id', id).then(({ error }: any) => {
-      if (error) { console.error(error); loadEditSuggestions(); }
+      if (error) { console.error(error); loadEditSuggestions(); toast("Couldn't update that report — please try again."); }
     });
     if (sug) {
       const cafeName = cafes.find((c) => c.id === sug.cafeId)?.name ?? 'a café';
       notify(sug.submittedBy, 'edit_resolved', `Your edit report for ${cafeName} was reviewed`, `/cafe/${sug.cafeId}`, 'notifyActivityUpdates');
     }
-  }, [supabase, loadEditSuggestions, editSuggestions, cafes, notify]);
+  }, [supabase, loadEditSuggestions, editSuggestions, cafes, notify, toast]);
 
   const submitClaim = useCallback((cafeId: string, role: ClaimRole, contactEmail: string, phone?: string, notes?: string) => {
     if (!meId) return;
@@ -740,16 +742,16 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     supabase.from('cafe_claims').insert({
       cafe_id: cafeId, submitted_by: meId, role, contact_email: contactEmail, phone: phone ?? '', notes: notes ?? '',
     }).select().single().then(({ data, error }: any) => {
-      if (error) { console.error(error); setClaims((prev) => prev.filter((c) => c.id !== tempId)); }
+      if (error) { console.error(error); setClaims((prev) => prev.filter((c) => c.id !== tempId)); toast("Couldn't submit your claim — please try again."); }
       else if (data) setClaims((prev) => prev.map((c) => (c.id === tempId ? rowToClaim(data) : c)));
     });
-  }, [meId, supabase]);
+  }, [meId, supabase, toast]);
 
   const setClaimStatus = useCallback((id: string, status: 'approved' | 'rejected') => {
     const claim = claims.find((c) => c.id === id);
     setClaims((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
     supabase.from('cafe_claims').update({ status }).eq('id', id).then(({ error }: any) => {
-      if (error) { console.error(error); loadClaims(); }
+      if (error) { console.error(error); loadClaims(); toast("Couldn't update that claim — please try again."); }
     });
     if (claim) {
       const cafeName = cafes.find((c) => c.id === claim.cafeId)?.name ?? 'a café';
@@ -757,7 +759,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       const message = status === 'approved' ? `Your claim on ${cafeName} was approved!` : `Your claim on ${cafeName} wasn't approved`;
       notify(claim.submittedBy, type, message, `/cafe/${claim.cafeId}`, 'notifyActivityUpdates');
     }
-  }, [supabase, loadClaims, claims, cafes, notify]);
+  }, [supabase, loadClaims, claims, cafes, notify, toast]);
 
   const suggestCafeTag = useCallback((cafeId: string, category: string, tag: string) => {
     if (!meId) return;
@@ -769,16 +771,16 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     supabase.from('cafe_tag_suggestions').insert({
       cafe_id: cafeId, submitted_by: meId, category, tag,
     }).select().single().then(({ data, error }: any) => {
-      if (error) { console.error(error); setTagSuggestions((prev) => prev.filter((s) => s.id !== tempId)); }
+      if (error) { console.error(error); setTagSuggestions((prev) => prev.filter((s) => s.id !== tempId)); toast("Couldn't submit your tag — please try again."); }
       else if (data) setTagSuggestions((prev) => prev.map((s) => (s.id === tempId ? rowToTagSuggestion(data) : s)));
     });
-  }, [meId, supabase]);
+  }, [meId, supabase, toast]);
 
   const resolveTagSuggestion = useCallback((id: string, status: 'approved' | 'rejected') => {
     const suggestion = tagSuggestions.find((s) => s.id === id);
     setTagSuggestions((prev) => prev.map((s) => (s.id === id ? { ...s, status } : s)));
     supabase.from('cafe_tag_suggestions').update({ status }).eq('id', id).then(({ error }: any) => {
-      if (error) { console.error(error); loadTagSuggestions(); }
+      if (error) { console.error(error); loadTagSuggestions(); toast("Couldn't update that tag suggestion — please try again."); }
     });
     if (!suggestion) return;
     if (status === 'approved') {
@@ -791,14 +793,14 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       ? `Your "${suggestion.tag}" tag for ${cafeName} was approved!`
       : `Your "${suggestion.tag}" tag for ${cafeName} wasn't approved`;
     notify(suggestion.submittedBy, type, message, `/cafe/${suggestion.cafeId}`, 'notifyActivityUpdates');
-  }, [supabase, loadTagSuggestions, tagSuggestions, cafes, notify, toggleCafeTag]);
+  }, [supabase, loadTagSuggestions, tagSuggestions, cafes, notify, toggleCafeTag, toast]);
 
   const setVerifiedByJoe = useCallback((cafeId: string, verified: boolean) => {
     setCafes((prev) => prev.map((c) => (c.id === cafeId ? { ...c, verifiedByJoe: verified } : c)));
     supabase.from('cafes').update({ verified_by_joe: verified }).eq('id', cafeId).then(({ error }: any) => {
-      if (error) { console.error(error); loadCafes(); }
+      if (error) { console.error(error); loadCafes(); toast("Couldn't update verification — please try again."); }
     });
-  }, [supabase, loadCafes]);
+  }, [supabase, loadCafes, toast]);
 
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: profiles, cafes,
