@@ -21,6 +21,7 @@ export interface Profile {
   notifyActivityUpdates?: boolean;
   notifyNearbyNudges?: boolean;
   notifyNearbyRadiusMiles?: number;
+  notifyMessages?: boolean;
   defaultPostVisibility?: Visibility;
   // derived / joined
   followers?: number;
@@ -189,6 +190,7 @@ export interface CafeClaim {
 export const NOTIFICATION_TYPES = [
   'like', 'comment', 'follow', 'suggestion_approved', 'suggestion_rejected',
   'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected',
+  'message_request', 'message_accepted',
 ] as const;
 export type NotificationType = typeof NOTIFICATION_TYPES[number];
 
@@ -224,4 +226,40 @@ export interface CafeTagSuggestion {
   // joined
   cafeName?: string;
   submitterName?: string;
+}
+export interface Conversation {
+  id: string;
+  requesterId: string;
+  recipientId: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+  updatedAt: string;
+  requesterLastReadAt: string;
+  recipientLastReadAt: string;
+}
+
+export interface DirectMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+}
+
+export const REPORT_REASONS = ['Spam', 'Harassment', 'Inappropriate content', 'Other'] as const;
+export type ReportReason = typeof REPORT_REASONS[number];
+
+export interface MessageReport {
+  id: string;
+  reporterId: string | null;
+  reportedUserId: string | null;
+  conversationId: string | null;
+  reason: string;
+  details: string;
+  evidence: string;
+  status: 'pending' | 'resolved';
+  createdAt: string;
+  // joined
+  reporterName?: string;
+  reportedName?: string;
 }

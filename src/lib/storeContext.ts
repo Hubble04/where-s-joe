@@ -4,7 +4,7 @@ import { createContext, useContext } from 'react';
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
-  AppNotification, CafeNote, CafeTagSuggestion,
+  AppNotification, CafeNote, CafeTagSuggestion, Conversation, DirectMessage, MessageReport, ReportReason,
 } from './types';
 
 /**
@@ -30,6 +30,8 @@ export interface StoreValue {
   notes: CafeNote[];
   tagSuggestions: CafeTagSuggestion[];
   follows: { followerId: string; followingId: string }[];
+  conversations: Conversation[];
+  messageReports: MessageReport[];
 
   getUser: (id: string) => Profile;
   getCafe: (id: string) => Cafe | undefined;
@@ -46,6 +48,10 @@ export interface StoreValue {
   mySuggestions: () => SuggestedCafe[];
   feedPosts: (mode: string) => Post[];
   postsForCafe: (cafeId: string) => Post[];
+  conversationWith: (userId: string) => Conversation | undefined;
+  messagesFor: (conversationId: string) => DirectMessage[];
+  unreadMessageCount: () => number;
+  isBlocked: (userId: string) => boolean;
 
   signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   signUp: (i: { name: string; username: string; email: string; password: string; location?: string }) => Promise<{ ok: boolean; error?: string }>;
@@ -81,6 +87,15 @@ export interface StoreValue {
   toggleCafeTag: (cafeId: string, category: string, tag: string) => void;
   suggestCafeTag: (cafeId: string, category: string, tag: string) => void;
   resolveTagSuggestion: (id: string, status: 'approved' | 'rejected') => void;
+  requestMessage: (recipientId: string, firstMessage: string) => Promise<{ ok: boolean; error?: string; conversationId?: string }>;
+  respondToMessageRequest: (conversationId: string, accept: boolean) => void;
+  sendMessage: (conversationId: string, body: string) => Promise<boolean>;
+  markConversationRead: (conversationId: string) => void;
+  refreshMessages: () => Promise<void>;
+  blockUser: (userId: string) => void;
+  unblockUser: (userId: string) => void;
+  reportUser: (userId: string, reason: ReportReason, details: string, conversationId?: string) => Promise<boolean>;
+  resolveMessageReport: (id: string) => void;
 }
 
 export const StoreContext = createContext<StoreValue | null>(null);

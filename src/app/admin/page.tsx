@@ -3,20 +3,20 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
-import type { SuggestedCafe, Cafe, CafeEditSuggestion, CafeClaim, CafeTagSuggestion } from '@/lib/types';
+import type { SuggestedCafe, Cafe, CafeEditSuggestion, CafeClaim, CafeTagSuggestion, MessageReport } from '@/lib/types';
 import { TAG_CATEGORY, ESTABLISHMENT_TYPES, TAG_TAXONOMY } from '@/lib/brand';
 import { SectionTitle, EmptyState, Chip, SearchBar, Modal } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { timeAgo } from '@/lib/utils';
 
-const TABS = ['Suggestions', 'Edit Reports', 'Claims', 'Tag Suggestions', 'Posts', 'Cafés', 'Users'] as const;
+const TABS = ['Suggestions', 'Edit Reports', 'Claims', 'Tag Suggestions', 'User Reports', 'Posts', 'Cafés', 'Users'] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminPage() {
   const {
     me, suggestions, approveSuggestion, rejectSuggestion, posts, deletePost, cafes, users, getUser,
-    editSuggestions, resolveEditSuggestion, claims, tagSuggestions, resolveTagSuggestion,
+    editSuggestions, resolveEditSuggestion, claims, tagSuggestions, resolveTagSuggestion, messageReports,
   } = useStore();
   const [tab, setTab] = useState<Tab>('Suggestions');
   const [cafeQuery, setCafeQuery] = useState('');
@@ -48,6 +48,7 @@ export default function AdminPage() {
   const pendingEdits = editSuggestions.filter((s) => s.status === 'pending');
   const pendingClaims = claims.filter((c) => c.status === 'pending');
   const pendingTagSuggestions = tagSuggestions.filter((t) => t.status === 'pending');
+  const pendingUserReports = messageReports.filter((r) => r.status === 'pending');
   const q = cafeQuery.trim().toLowerCase();
   const matchesQuery = (c: Cafe) => !q || [c.name, c.city, c.state, c.neighborhood].join(' ').toLowerCase().includes(q);
   const cafesNeedingReview = cafes.filter((c) => c.status === 'pending' && matchesQuery(c));
@@ -63,6 +64,7 @@ export default function AdminPage() {
         <Stat label="Reports" value={pendingEdits.length} />
         <Stat label="Claims" value={pendingClaims.length} />
         <Stat label="Tags" value={pendingTagSuggestions.length} />
+        <Stat label="Flags" value={pendingUserReports.length} />
         <Stat label="Posts" value={posts.length} />
         <Stat label="Cafés" value={cafes.length} />
         <Stat label="Users" value={users.length} />
@@ -75,6 +77,7 @@ export default function AdminPage() {
           if (t === 'Edit Reports' && pendingEdits.length) label = `Edit Reports (${pendingEdits.length})`;
           if (t === 'Claims' && pendingClaims.length) label = `Claims (${pendingClaims.length})`;
           if (t === 'Tag Suggestions' && pendingTagSuggestions.length) label = `Tag Suggestions (${pendingTagSuggestions.length})`;
+          if (t === 'User Reports' && pendingUserReports.length) label = `User Reports (${pendingUserReports.length})`;
           if (t === 'Cafés' && cafesNeedingReview.length) label = `Cafés (${cafesNeedingReview.length})`;
           return <Chip key={t} label={label} active={tab === t} onClick={() => setTab(t)} />;
         })}
@@ -108,6 +111,14 @@ export default function AdminPage() {
         pendingTagSuggestions.length === 0 ? <EmptyState title="Queue is clear" body="No vibe/amenity tag suggestions awaiting review." /> : (
           <div className="space-y-2">
             {pendingTagSuggestions.map((t) => <TagSuggestionCard key={t.id} suggestion={t} />)}
+          </div>
+        )
+      )}
+
+      {tab === 'User Reports' && (
+        pendingUserReports.length === 0 ? <EmptyState title="Queue is clear" body="No reported users awaiting review." /> : (
+          <div className="space-y-2">
+            {pendingUserReports.map((r) => <UserReportCard key={r.id} report={r} />)}
           </div>
         )
       )}
@@ -343,6 +354,36 @@ function ClaimCard({ claim: c }: { claim: CafeClaim }) {
           Approve &amp; Verify
         </Button>
         <Button variant="danger" className="flex-1" onClick={() => setClaimStatus(c.id, 'rejected')}>Reject</Button>
+      </div>
+    </div>
+  );
+}
+
+function UserReportCard({ report: r }: { report: MessageReport }) {
+  const { resolveMessageReport } = useStore();
+  return (
+    <div className="rounded-card bg-ivory p-3 shadow-card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {r.reportedUserId ? (
+            <Link href={`/user/${r.reportedUserId}`} className="block truncate font-display text-lg text-racing-700 hover:underline">{r.reportedName || 'Unknown user'}</Link>
+          ) : (
+            <p className="truncate font-display text-lg text-racing-700">Unknown user</p>
+          )}
+          <span className="mt-0.5 inline-block rounded-pill bg-amber/15 px-2 py-0.5 font-mono text-[0.65rem] text-amber-dark">{r.reason}</span>
+        </div>
+        <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(r.createdAt)}</span>
+      </div>
+      {r.details && <p className="mt-2 text-sm text-coffee/80">{r.details}</p>}
+      {r.evidence && (
+        <div className="mt-2 rounded-card bg-parchment p-3">
+          <p className="mb-1 font-mono text-[0.6rem] uppercase tracking-eyebrow text-coffee/45">Their recent messages</p>
+          <p className="whitespace-pre-wrap break-words font-mono text-xs text-coffee/75">{r.evidence}</p>
+        </div>
+      )}
+      <p className="mt-2 font-mono text-[0.65rem] text-coffee/45">Reported by {r.reporterName || 'a member'}</p>
+      <div className="mt-3">
+        <Button className="w-full" onClick={() => resolveMessageReport(r.id)}>Mark resolved</Button>
       </div>
     </div>
   );

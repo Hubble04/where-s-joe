@@ -21,9 +21,11 @@ export function PostCard({ post, onNeedAuth }: { post: Post; onNeedAuth: () => v
   return (
     <article className="overflow-hidden rounded-card bg-ivory shadow-card animate-fade-up">
       <div className="flex items-center gap-3 px-4 py-3">
-        <ImageWithFallback src={author.profilePhotoUrl} alt={author.name} seed={author.name} className="h-9 w-9 rounded-full" />
+        <Link href={`/user/${author.id}`} aria-label={`View @${author.username}`} className="shrink-0">
+          <ImageWithFallback src={author.profilePhotoUrl} alt={author.name} seed={author.name} className="h-9 w-9 rounded-full" />
+        </Link>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-mono text-sm text-racing-700">@{author.username}</p>
+          <Link href={`/user/${author.id}`} className="block truncate font-mono text-sm text-racing-700 hover:underline">@{author.username}</Link>
           {cafe && (
             <Link href={`/cafe/${cafe.id}`} className="flex items-center gap-1 truncate font-mono text-xs text-amber-dark">
               <svg viewBox="0 0 24 24" className="h-3 w-3 fill-amber-dark" aria-hidden><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z" /></svg>
@@ -75,7 +77,7 @@ export function PostCard({ post, onNeedAuth }: { post: Post; onNeedAuth: () => v
       </div>
 
       <div className="px-4 pb-1 pt-2">
-        <p className="text-sm text-coffee/90"><span className="text-racing-700">@{author.username}</span> {post.caption}</p>
+        <p className="text-sm text-coffee/90"><Link href={`/user/${author.id}`} className="text-racing-700 hover:underline">@{author.username}</Link> {post.caption}</p>
       </div>
 
       {cafe && (
@@ -97,7 +99,7 @@ export function PostCard({ post, onNeedAuth }: { post: Post; onNeedAuth: () => v
               const u = getUser(c.userId);
               return (
                 <p key={c.id} className="text-sm text-coffee/85">
-                  <span className="text-racing-700">@{u.username}</span> {c.content}
+                  <Link href={`/user/${u.id}`} className="text-racing-700 hover:underline">@{u.username}</Link> {c.content}
                   <span className="ml-2 font-mono text-[0.65rem] text-coffee/40">{timeAgo(c.createdAt)}</span>
                 </p>
               );

@@ -303,9 +303,10 @@ function NotificationSettingsModal({ onClose }: { onClose: () => void }) {
 
   if (!me) return null;
 
-  const rows: { key: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates' | 'notifyNearbyNudges'; label: string; hint: string }[] = [
+  const rows: { key: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates' | 'notifyNearbyNudges' | 'notifyMessages'; label: string; hint: string }[] = [
     { key: 'notifyLikesComments', label: 'Likes & comments', hint: 'When someone likes or comments on your posts.' },
     { key: 'notifyFollows', label: 'Follows', hint: 'When someone starts following you.' },
+    { key: 'notifyMessages', label: 'Messages', hint: 'Message requests, accepted requests, and new messages.' },
     { key: 'notifyActivityUpdates', label: 'Suggestion & claim updates', hint: 'When your café suggestions, edit reports, or claims are reviewed.' },
     { key: 'notifyNearbyNudges', label: 'Nearby café nudges', hint: 'When you’re close to a café on your Want To Go or Favorites list (while Explore is open).' },
   ];

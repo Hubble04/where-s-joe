@@ -28,6 +28,9 @@ alter table public.profiles add column if not exists notify_activity_updates boo
 alter table public.profiles add column if not exists notify_nearby_nudges boolean not null default true;
 alter table public.profiles add column if not exists notify_nearby_radius_miles smallint not null default 1 check (notify_nearby_radius_miles between 1 and 10);
 
+-- Direct-message notifications (requests, accepted requests, new messages).
+alter table public.profiles add column if not exists notify_messages boolean not null default true;
+
 -- Default visibility applied to new posts (still changeable per-post at compose time).
 alter table public.profiles add column if not exists default_post_visibility text not null default 'public' check (default_post_visibility in ('public','followers','private'));
 
@@ -235,7 +238,8 @@ create table if not exists public.notifications (
   actor_id   uuid references auth.users (id) on delete set null,
   type       text not null check (type in (
     'like', 'comment', 'follow', 'suggestion_approved', 'suggestion_rejected',
-    'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected'
+    'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected',
+    'message_request', 'message_accepted'
   )),
   message    text not null,
   link       text,
@@ -249,7 +253,8 @@ create index if not exists notifications_user_unread_idx on public.notifications
 alter table public.notifications drop constraint if exists notifications_type_check;
 alter table public.notifications add constraint notifications_type_check check (type in (
   'like', 'comment', 'follow', 'suggestion_approved', 'suggestion_rejected',
-  'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected'
+  'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected',
+    'message_request', 'message_accepted'
 ));
 
 -- ---------------------------------------------------------------------------
@@ -515,6 +520,205 @@ create policy p_tag_suggestions_admin on public.cafe_tag_suggestions for update 
 drop policy if exists p_tag_suggestions_delete on public.cafe_tag_suggestions;
 create policy p_tag_suggestions_delete on public.cafe_tag_suggestions for delete to authenticated
   using (public.is_admin());
+
+-- =========================================================================
+-- Direct messaging: requests, conversations, messages, blocks, reports
+-- Clients can only READ these tables. All writes go through the functions
+-- below (security definer), which enforce the rules: no self-messaging,
+-- no messaging across a block, one conversation per pair, and messages only
+-- once the recipient has accepted.
+-- =========================================================================
+create table if not exists public.conversations (
+  id                     uuid primary key default gen_random_uuid(),
+  requester_id           uuid not null references auth.users (id) on delete cascade,
+  recipient_id           uuid not null references auth.users (id) on delete cascade,
+  status                 text not null default 'pending' check (status in ('pending','accepted','declined')),
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now(),
+  requester_last_read_at timestamptz not null default now(),
+  recipient_last_read_at timestamptz not null default 'epoch',
+  check (requester_id <> recipient_id)
+);
+create unique index if not exists conversations_pair_idx
+  on public.conversations (least(requester_id, recipient_id), greatest(requester_id, recipient_id));
+create index if not exists conversations_requester_idx on public.conversations (requester_id);
+create index if not exists conversations_recipient_idx on public.conversations (recipient_id);
+
+create table if not exists public.direct_messages (
+  id              uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations (id) on delete cascade,
+  sender_id       uuid not null references auth.users (id) on delete cascade,
+  body            text not null check (char_length(body) between 1 and 2000),
+  created_at      timestamptz not null default now()
+);
+create index if not exists direct_messages_conv_idx on public.direct_messages (conversation_id, created_at);
+
+create table if not exists public.user_blocks (
+  blocker_id uuid not null references auth.users (id) on delete cascade,
+  blocked_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_id),
+  check (blocker_id <> blocked_id)
+);
+
+create table if not exists public.message_reports (
+  id               uuid primary key default gen_random_uuid(),
+  reporter_id      uuid references auth.users (id) on delete set null,
+  reported_user_id uuid references auth.users (id) on delete set null,
+  conversation_id  uuid references public.conversations (id) on delete set null,
+  reason           text not null,
+  details          text not null default '',
+  evidence         text not null default '',
+  status           text not null default 'pending' check (status in ('pending','resolved')),
+  created_at       timestamptz not null default now()
+);
+create index if not exists message_reports_status_idx on public.message_reports (status);
+
+alter table public.conversations   enable row level security;
+alter table public.direct_messages enable row level security;
+alter table public.user_blocks     enable row level security;
+alter table public.message_reports enable row level security;
+
+drop policy if exists p_conversations_read on public.conversations;
+create policy p_conversations_read on public.conversations for select to authenticated
+  using (requester_id = auth.uid() or recipient_id = auth.uid());
+
+drop policy if exists p_direct_messages_read on public.direct_messages;
+create policy p_direct_messages_read on public.direct_messages for select to authenticated
+  using (exists (
+    select 1 from public.conversations c
+    where c.id = conversation_id and (c.requester_id = auth.uid() or c.recipient_id = auth.uid())
+  ));
+
+drop policy if exists p_user_blocks_read on public.user_blocks;
+create policy p_user_blocks_read on public.user_blocks for select to authenticated
+  using (blocker_id = auth.uid());
+drop policy if exists p_user_blocks_write on public.user_blocks;
+create policy p_user_blocks_write on public.user_blocks for insert to authenticated
+  with check (blocker_id = auth.uid());
+drop policy if exists p_user_blocks_delete on public.user_blocks;
+create policy p_user_blocks_delete on public.user_blocks for delete to authenticated
+  using (blocker_id = auth.uid());
+
+-- Reports hold a snapshot of the reported messages ("evidence"), so admins
+-- never need blanket access to private conversations.
+drop policy if exists p_message_reports_read on public.message_reports;
+create policy p_message_reports_read on public.message_reports for select to authenticated
+  using (public.is_admin());
+drop policy if exists p_message_reports_write on public.message_reports;
+create policy p_message_reports_write on public.message_reports for insert to authenticated
+  with check (reporter_id = auth.uid());
+drop policy if exists p_message_reports_admin on public.message_reports;
+create policy p_message_reports_admin on public.message_reports for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+drop policy if exists p_message_reports_delete on public.message_reports;
+create policy p_message_reports_delete on public.message_reports for delete to authenticated
+  using (public.is_admin());
+
+-- Is there a block in either direction between two users? (Bypasses RLS so
+-- a blocked person's client can be refused without ever learning who blocked.)
+create or replace function public.users_blocked_between(a uuid, b uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.user_blocks
+    where (blocker_id = a and blocked_id = b) or (blocker_id = b and blocked_id = a)
+  );
+$$;
+
+create or replace function public.request_message(recipient uuid, first_message text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  msg text := btrim(coalesce(first_message, ''));
+  conv uuid;
+begin
+  if me is null then raise exception 'Not signed in.'; end if;
+  if recipient is null or recipient = me then raise exception 'You can''t message this person.'; end if;
+  if char_length(msg) < 1 or char_length(msg) > 2000 then raise exception 'Message must be 1-2000 characters.'; end if;
+  if not exists (select 1 from public.profiles where id = recipient) then raise exception 'User not found.'; end if;
+  if public.users_blocked_between(me, recipient) then raise exception 'You can''t message this person.'; end if;
+  if exists (
+    select 1 from public.conversations
+    where least(requester_id, recipient_id) = least(me, recipient)
+      and greatest(requester_id, recipient_id) = greatest(me, recipient)
+  ) then
+    raise exception 'A conversation or request already exists.';
+  end if;
+  insert into public.conversations (requester_id, recipient_id) values (me, recipient) returning id into conv;
+  insert into public.direct_messages (conversation_id, sender_id, body) values (conv, me, msg);
+  return conv;
+end; $$;
+
+create or replace function public.respond_to_message_request(conv uuid, accept boolean)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  c public.conversations;
+begin
+  if me is null then raise exception 'Not signed in.'; end if;
+  select * into c from public.conversations where id = conv and recipient_id = me and status = 'pending';
+  if not found then raise exception 'Request not found.'; end if;
+  if accept and public.users_blocked_between(c.requester_id, c.recipient_id) then
+    raise exception 'You can''t message this person.';
+  end if;
+  update public.conversations
+    set status = case when accept then 'accepted' else 'declined' end,
+        updated_at = now(),
+        recipient_last_read_at = now()
+    where id = conv;
+end; $$;
+
+create or replace function public.send_message(conv uuid, msg text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  clean text := btrim(coalesce(msg, ''));
+  c public.conversations;
+  new_id uuid;
+begin
+  if me is null then raise exception 'Not signed in.'; end if;
+  if char_length(clean) < 1 or char_length(clean) > 2000 then raise exception 'Message must be 1-2000 characters.'; end if;
+  select * into c from public.conversations
+    where id = conv and (requester_id = me or recipient_id = me);
+  if not found then raise exception 'Conversation not found.'; end if;
+  if c.status <> 'accepted' then raise exception 'This conversation isn''t open yet.'; end if;
+  if public.users_blocked_between(c.requester_id, c.recipient_id) then raise exception 'You can''t message this person.'; end if;
+  insert into public.direct_messages (conversation_id, sender_id, body) values (conv, me, clean) returning id into new_id;
+  update public.conversations
+    set updated_at = now(),
+        requester_last_read_at = case when me = requester_id then now() else requester_last_read_at end,
+        recipient_last_read_at = case when me = recipient_id then now() else recipient_last_read_at end
+    where id = conv;
+  return new_id;
+end; $$;
+
+create or replace function public.mark_conversation_read(conv uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'Not signed in.'; end if;
+  update public.conversations
+    set requester_last_read_at = case when me = requester_id then now() else requester_last_read_at end,
+        recipient_last_read_at = case when me = recipient_id then now() else recipient_last_read_at end
+    where id = conv and (requester_id = me or recipient_id = me);
+end; $$;
+
+-- Internal helper only: not callable by clients (it would reveal who blocked whom).
+revoke all on function public.users_blocked_between(uuid, uuid) from public;
+revoke all on function public.request_message(uuid, text) from public;
+revoke all on function public.respond_to_message_request(uuid, boolean) from public;
+revoke all on function public.send_message(uuid, text) from public;
+revoke all on function public.mark_conversation_read(uuid) from public;
+grant execute on function public.request_message(uuid, text) to authenticated;
+grant execute on function public.respond_to_message_request(uuid, boolean) to authenticated;
+grant execute on function public.send_message(uuid, text) to authenticated;
+grant execute on function public.mark_conversation_read(uuid) to authenticated;
+-- Supabase grants EXECUTE to anon/authenticated by default; remove what clients must not have.
+revoke execute on function public.users_blocked_between(uuid, uuid) from anon, authenticated;
+revoke execute on function public.request_message(uuid, text) from anon;
+revoke execute on function public.respond_to_message_request(uuid, boolean) from anon;
+revoke execute on function public.send_message(uuid, text) from anon;
+revoke execute on function public.mark_conversation_read(uuid) from anon;
 
 -- =========================================================================
 -- Auto-create a profile row on signup (username from metadata or email)

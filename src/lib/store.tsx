@@ -8,6 +8,7 @@ import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
   AppNotification, NotificationType, CafeNote, CafeTagSuggestion,
+  Conversation, DirectMessage, MessageReport, ReportReason,
 } from './types';
 import {
   MOCK_CAFES, MOCK_USERS, MOCK_ME, MOCK_POSTS, MOCK_COMMENTS, MOCK_FOLLOWS,
@@ -39,6 +40,10 @@ interface Persisted {
   notifications: AppNotification[];
   notes: CafeNote[];
   tagSuggestions: CafeTagSuggestion[];
+  conversations: Conversation[];
+  directMessages: DirectMessage[];
+  blockedIds: string[];
+  reports: MessageReport[];
   removedPostIds: string[];
   cafeStatusOverrides: Record<string, Cafe['status']>;
   cafeEstablishmentOverrides: Record<string, string>;
@@ -84,6 +89,14 @@ function defaultState(): Persisted {
     notifications: [],
     notes: [],
     tagSuggestions: [],
+    conversations: [
+      { id: 'conv-seed', requesterId: 'u-mara', recipientId: MOCK_ME.id, status: 'pending', createdAt: nowISO(), updatedAt: nowISO(), requesterLastReadAt: nowISO(), recipientLastReadAt: '1970-01-01T00:00:00.000Z' },
+    ],
+    directMessages: [
+      { id: 'dm-seed', conversationId: 'conv-seed', senderId: 'u-mara', body: 'Love your café picks! Where do you go when you need a quiet place to work?', createdAt: nowISO() },
+    ],
+    blockedIds: [],
+    reports: [],
     removedPostIds: [],
     cafeStatusOverrides: {},
     cafeEstablishmentOverrides: {},
@@ -224,6 +237,29 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     [visiblePosts],
   );
 
+  const conversationWith = useCallback(
+    (userId: string) => s.conversations.find((c) => c.requesterId === userId || c.recipientId === userId),
+    [s.conversations],
+  );
+  const myConversations = useMemo(
+    () => (me ? s.conversations.filter((c) => c.requesterId === me.id || c.recipientId === me.id) : []),
+    [s.conversations, me],
+  );
+  const messagesFor = useCallback(
+    (conversationId: string) => s.directMessages.filter((m) => m.conversationId === conversationId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [s.directMessages],
+  );
+  const isBlocked = useCallback((userId: string) => s.blockedIds.includes(userId), [s.blockedIds]);
+  const unreadMessageCount = useCallback(() => {
+    if (!me) return 0;
+    return myConversations.filter((c) => {
+      if (c.status === 'pending') return c.recipientId === me.id;
+      if (c.status !== 'accepted') return false;
+      const lastRead = c.requesterId === me.id ? c.requesterLastReadAt : c.recipientLastReadAt;
+      return s.directMessages.some((m) => m.conversationId === c.id && m.senderId !== me.id && m.createdAt > lastRead);
+    }).length;
+  }, [me, myConversations, s.directMessages]);
+
   const signIn = useCallback(async (email: string): Promise<{ ok: boolean; error?: string }> => {
     const existing = allUsers.find((u) => u.email?.toLowerCase() === email.toLowerCase());
     const target = existing ?? MOCK_ME;
@@ -258,7 +294,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     type: NotificationType,
     message: string,
     link: string | null,
-    category: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates',
+    category: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates' | 'notifyMessages',
   ) => {
     if (!me || !recipientId || recipientId === me.id) return;
     const recipient = allUsers.find((u) => u.id === recipientId);
@@ -493,14 +529,105 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, cafeVerifiedOverrides: { ...p.cafeVerifiedOverrides, [cafeId]: verified } }));
   }, []);
 
+  const requestMessage = useCallback(async (recipientId: string, firstMessage: string) => {
+    const text = firstMessage.trim();
+    if (!me) return { ok: false, error: 'Not signed in.' };
+    if (!text || text.length > 2000) return { ok: false, error: 'Message must be 1-2000 characters.' };
+    if (recipientId === me.id || s.blockedIds.includes(recipientId)) return { ok: false, error: 'You can\u2019t message this person.' };
+    if (s.conversations.some((c) => c.requesterId === recipientId || c.recipientId === recipientId)) {
+      return { ok: false, error: 'A conversation or request already exists.' };
+    }
+    const now = nowISO();
+    const conv: Conversation = {
+      id: uid(), requesterId: me.id, recipientId, status: 'pending', createdAt: now, updatedAt: now,
+      requesterLastReadAt: now, recipientLastReadAt: '1970-01-01T00:00:00.000Z',
+    };
+    const msg: DirectMessage = { id: uid(), conversationId: conv.id, senderId: me.id, body: text, createdAt: now };
+    setS((p) => ({ ...p, conversations: [conv, ...p.conversations], directMessages: [...p.directMessages, msg] }));
+    notify(recipientId, 'message_request', `${me.name} sent you a message request`, `/messages/${conv.id}`, 'notifyMessages');
+    return { ok: true, conversationId: conv.id };
+  }, [me, s.blockedIds, s.conversations, notify]);
+
+  const respondToMessageRequest = useCallback((conversationId: string, accept: boolean) => {
+    if (!me) return;
+    const conv = s.conversations.find((c) => c.id === conversationId);
+    if (!conv || conv.recipientId !== me.id || conv.status !== 'pending') return;
+    const now = nowISO();
+    setS((p) => ({ ...p, conversations: p.conversations.map((c) => (c.id === conversationId
+      ? { ...c, status: accept ? 'accepted' : 'declined', updatedAt: now, recipientLastReadAt: now } : c)) }));
+    if (accept) notify(conv.requesterId, 'message_accepted', `${me.name} accepted your message request`, `/messages/${conversationId}`, 'notifyMessages');
+  }, [me, s.conversations, notify]);
+
+  const sendMessage = useCallback(async (conversationId: string, body: string) => {
+    const text = body.trim();
+    const conv = s.conversations.find((c) => c.id === conversationId);
+    if (!me || !conv || !text || text.length > 2000 || conv.status !== 'accepted') return false;
+    const otherId = conv.requesterId === me.id ? conv.recipientId : conv.requesterId;
+    if (s.blockedIds.includes(otherId)) return false;
+    const now = nowISO();
+    const msg: DirectMessage = { id: uid(), conversationId, senderId: me.id, body: text, createdAt: now };
+    setS((p) => ({
+      ...p,
+      directMessages: [...p.directMessages, msg],
+      conversations: p.conversations.map((c) => (c.id === conversationId
+        ? { ...c, updatedAt: now, ...(c.requesterId === me.id ? { requesterLastReadAt: now } : { recipientLastReadAt: now }) } : c)),
+    }));
+    return true;
+  }, [me, s.conversations, s.blockedIds]);
+
+  const markConversationRead = useCallback((conversationId: string) => {
+    if (!me) return;
+    const now = nowISO();
+    setS((p) => ({ ...p, conversations: p.conversations.map((c) => (c.id === conversationId
+      ? (c.requesterId === me.id ? { ...c, requesterLastReadAt: now } : { ...c, recipientLastReadAt: now }) : c)) }));
+  }, [me]);
+
+  const refreshMessages = useCallback(async () => {}, []);
+
+  const blockUser = useCallback((userId: string) => {
+    if (!me || userId === me.id) return;
+    setS((p) => (p.blockedIds.includes(userId) ? p : { ...p, blockedIds: [...p.blockedIds, userId] }));
+  }, [me]);
+
+  const unblockUser = useCallback((userId: string) => {
+    setS((p) => ({ ...p, blockedIds: p.blockedIds.filter((x) => x !== userId) }));
+  }, []);
+
+  const reportUser = useCallback(async (userId: string, reason: ReportReason, details: string, conversationId?: string) => {
+    if (!me) return false;
+    const evidence = conversationId
+      ? s.directMessages.filter((m) => m.conversationId === conversationId && m.senderId === userId).slice(-5).map((m) => m.body).join('\n---\n')
+      : '';
+    const report: MessageReport = {
+      id: uid(), reporterId: me.id, reportedUserId: userId, conversationId: conversationId ?? null,
+      reason, details, evidence, status: 'pending', createdAt: nowISO(),
+    };
+    setS((p) => ({ ...p, reports: [report, ...p.reports] }));
+    return true;
+  }, [me, s.directMessages]);
+
+  const resolveMessageReport = useCallback((id: string) => {
+    setS((p) => ({ ...p, reports: p.reports.map((r) => (r.id === id ? { ...r, status: 'resolved' } : r)) }));
+  }, []);
+
+  const reportsOut = useMemo<MessageReport[]>(
+    () => s.reports.map((r) => ({
+      ...r,
+      reporterName: r.reporterId ? allUsers.find((u) => u.id === r.reporterId)?.name : undefined,
+      reportedName: r.reportedUserId ? allUsers.find((u) => u.id === r.reportedUserId)?.name : undefined,
+    })),
+    [s.reports, allUsers],
+  );
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: allUsers, cafes: allCafes,
     posts: visiblePosts, comments: s.comments, saves: s.saves, lists: s.lists,
     suggestions: s.suggestions, editSuggestions: s.editSuggestions, claims: s.claims,
     notifications: s.notifications, notes: s.notes, tagSuggestions: s.tagSuggestions, follows: s.follows,
+    conversations: myConversations, messageReports: reportsOut,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, noteForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
-    feedPosts, postsForCafe,
+    feedPosts, postsForCafe, conversationWith, messagesFor, unreadMessageCount, isBlocked,
     signIn, signUp, signOut, updateProfile,
     toggleLike, addComment, toggleFollow, createPost,
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
@@ -510,6 +637,8 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     markNotificationRead, markAllNotificationsRead,
     setCafeNote,
     toggleCafeTag, suggestCafeTag, resolveTagSuggestion,
+    requestMessage, respondToMessageRequest, sendMessage, markConversationRead, refreshMessages,
+    blockUser, unblockUser, reportUser, resolveMessageReport,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

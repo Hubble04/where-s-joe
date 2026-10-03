@@ -6,8 +6,9 @@ import { useStore } from '@/lib/store';
 import { ImageWithFallback } from './ImageWithFallback';
 
 export function TopBar() {
-  const { me, notifications } = useStore();
+  const { me, notifications, unreadMessageCount } = useStore();
   const unread = me ? notifications.filter((n) => !n.read).length : 0;
+  const unreadMessages = me ? unreadMessageCount() : 0;
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between border-b border-racing-100 bg-ivory/90 px-4 py-3 backdrop-blur">
       <Link href="/" className="flex items-center gap-2">
@@ -18,6 +19,18 @@ export function TopBar() {
       <div className="flex items-center gap-2">
         {isDemoMode && (
           <span className="rounded-pill bg-amber/15 px-2 py-1 text-[0.65rem] font-mono text-amber-dark">Demo</span>
+        )}
+        {me && (
+          <Link href="/messages" aria-label="Messages" className="relative flex h-8 w-8 items-center justify-center">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-racing-700" strokeWidth={1.7}>
+              <path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z" strokeLinejoin="round" />
+            </svg>
+            {unreadMessages > 0 && (
+              <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber px-1 font-mono text-[0.6rem] text-ivory">
+                {unreadMessages > 9 ? '9+' : unreadMessages}
+              </span>
+            )}
+          </Link>
         )}
         {me && (
           <Link href="/notifications" aria-label="Notifications" className="relative flex h-8 w-8 items-center justify-center">

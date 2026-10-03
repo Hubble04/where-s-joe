@@ -8,6 +8,7 @@ import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, WeekHours, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
   AppNotification, NotificationType, CafeNote, CafeTagSuggestion,
+  Conversation, DirectMessage, MessageReport, ReportReason,
 } from './types';
 import { getSupabaseBrowser } from './supabase/client';
 import { StoreContext, type StoreValue } from './storeContext';
@@ -29,6 +30,7 @@ function rowToProfile(r: any): Profile {
     notifyActivityUpdates: r.notify_activity_updates ?? true,
     notifyNearbyNudges: r.notify_nearby_nudges ?? true,
     notifyNearbyRadiusMiles: r.notify_nearby_radius_miles ?? 1,
+    notifyMessages: r.notify_messages ?? true,
     defaultPostVisibility: r.default_post_visibility ?? 'public',
   };
 }
@@ -113,6 +115,31 @@ function rowToTagSuggestion(r: any): CafeTagSuggestion {
   };
 }
 
+function rowToConversation(r: any): Conversation {
+  return {
+    id: r.id, requesterId: r.requester_id, recipientId: r.recipient_id, status: r.status,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+    requesterLastReadAt: r.requester_last_read_at, recipientLastReadAt: r.recipient_last_read_at,
+  };
+}
+
+function rowToDirectMessage(r: any): DirectMessage {
+  return { id: r.id, conversationId: r.conversation_id, senderId: r.sender_id, body: r.body, createdAt: r.created_at };
+}
+
+function rowToReport(r: any): MessageReport {
+  return {
+    id: r.id, reporterId: r.reporter_id, reportedUserId: r.reported_user_id, conversationId: r.conversation_id,
+    reason: r.reason, details: r.details ?? '', evidence: r.evidence ?? '', status: r.status, createdAt: r.created_at,
+  };
+}
+
+/** The messaging database functions raise readable messages; anything else becomes a generic one. */
+function dmError(message: string | undefined): string {
+  const known = /^(You can|This conversation|A conversation|Message must|User not found|Request not found|Not signed in|Conversation not found)/;
+  return message && known.test(message) ? message : 'Something went wrong — please try again.';
+}
+
 const FALLBACK_USER: Omit<Profile, 'id'> = {
   name: 'Unknown', username: 'unknown', bio: '', profilePhotoUrl: '', location: '',
   role: 'user', createdAt: new Date().toISOString(),
@@ -141,6 +168,10 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notes, setNotes] = useState<CafeNote[]>([]);
   const [tagSuggestions, setTagSuggestions] = useState<CafeTagSuggestion[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [dms, setDms] = useState<DirectMessage[]>([]);
+  const [blockedIds, setBlockedIds] = useState<string[]>([]);
+  const [reports, setReports] = useState<MessageReport[]>([]);
 
   // --- loaders ---------------------------------------------------------
   const loadProfiles = useCallback(async () => {
@@ -250,6 +281,29 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     })));
   }, [supabase]);
 
+  const loadMessaging = useCallback(async () => {
+    const { data: convRows, error } = await supabase.from('conversations').select('*').order('updated_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    setConversations((convRows ?? []).map(rowToConversation));
+    const ids = (convRows ?? []).map((c: any) => c.id);
+    if (ids.length === 0) { setDms([]); return; }
+    const { data: msgRows, error: e2 } = await supabase.from('direct_messages').select('*').in('conversation_id', ids).order('created_at', { ascending: true }).limit(2000);
+    if (e2) { console.error(e2); return; }
+    setDms((msgRows ?? []).map(rowToDirectMessage));
+  }, [supabase]);
+
+  const loadBlocks = useCallback(async () => {
+    const { data, error } = await supabase.from('user_blocks').select('*');
+    if (error) { console.error(error); return; }
+    setBlockedIds((data ?? []).map((r: any) => r.blocked_id));
+  }, [supabase]);
+
+  const loadReports = useCallback(async () => {
+    const { data, error } = await supabase.from('message_reports').select('*').order('created_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    setReports((data ?? []).map(rowToReport));
+  }, [supabase]);
+
   // --- auth session ------------------------------------------------------
   useEffect(() => {
     let alive = true;
@@ -275,12 +329,23 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
         meId ? loadMyLists(meId) : Promise.resolve(setMyLists([])),
         meId ? loadNotifications(meId) : Promise.resolve(setNotifications([])),
         meId ? loadNotes(meId) : Promise.resolve(setNotes([])),
+        meId ? loadMessaging() : Promise.resolve(setConversations([])),
+        meId ? loadBlocks() : Promise.resolve(setBlockedIds([])),
+        loadReports(),
       ]);
       if (alive) { setReady(true); everReady.current = true; }
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authResolved, meId]);
+
+  // No live updates: pick up new messages whenever the app comes back into view.
+  useEffect(() => {
+    if (!meId) return;
+    const onVisible = () => { if (document.visibilityState === 'visible') loadMessaging(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [meId, loadMessaging]);
 
   // --- derived / computed -------------------------------------------------
   const me = useMemo(() => (meId ? profiles.find((p) => p.id === meId) ?? null : null), [meId, profiles]);
@@ -377,6 +442,25 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     [postsOut],
   );
 
+  const conversationWith = useCallback(
+    (userId: string) => conversations.find((c) => c.requesterId === userId || c.recipientId === userId),
+    [conversations],
+  );
+  const messagesFor = useCallback(
+    (conversationId: string) => dms.filter((m) => m.conversationId === conversationId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [dms],
+  );
+  const isBlocked = useCallback((userId: string) => blockedIds.includes(userId), [blockedIds]);
+  const unreadMessageCount = useCallback(() => {
+    if (!meId) return 0;
+    return conversations.filter((c) => {
+      if (c.status === 'pending') return c.recipientId === meId;
+      if (c.status !== 'accepted') return false;
+      const lastRead = c.requesterId === meId ? c.requesterLastReadAt : c.recipientLastReadAt;
+      return dms.some((m) => m.conversationId === c.id && m.senderId !== meId && m.createdAt > lastRead);
+    }).length;
+  }, [meId, conversations, dms]);
+
   // --- auth mutations ------------------------------------------------------
   const signIn = useCallback(async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -409,6 +493,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     if (patch.notifyActivityUpdates !== undefined) dbPatch.notify_activity_updates = patch.notifyActivityUpdates;
     if (patch.notifyNearbyNudges !== undefined) dbPatch.notify_nearby_nudges = patch.notifyNearbyNudges;
     if (patch.notifyNearbyRadiusMiles !== undefined) dbPatch.notify_nearby_radius_miles = patch.notifyNearbyRadiusMiles;
+    if (patch.notifyMessages !== undefined) dbPatch.notify_messages = patch.notifyMessages;
     if (patch.defaultPostVisibility !== undefined) dbPatch.default_post_visibility = patch.defaultPostVisibility;
     setProfiles((prev) => prev.map((p) => (p.id === meId ? { ...p, ...patch } : p)));
     supabase.from('profiles').update(dbPatch).eq('id', meId).then(({ error }: any) => {
@@ -423,7 +508,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     type: NotificationType,
     message: string,
     link: string | null,
-    category: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates',
+    category: 'notifyLikesComments' | 'notifyFollows' | 'notifyActivityUpdates' | 'notifyMessages',
   ) => {
     if (!meId || !recipientId || recipientId === meId) return;
     const recipient = profiles.find((p) => p.id === recipientId);
@@ -802,14 +887,124 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     });
   }, [supabase, loadCafes, toast]);
 
+  // --- direct messaging ---------------------------------------------------
+  const requestMessage = useCallback(async (recipientId: string, firstMessage: string) => {
+    if (!meId) return { ok: false, error: 'Not signed in.' };
+    const { data, error } = await supabase.rpc('request_message', { recipient: recipientId, first_message: firstMessage });
+    if (error) { console.error(error); return { ok: false, error: dmError(error.message) }; }
+    await loadMessaging();
+    notify(recipientId, 'message_request', `${me?.name ?? 'Someone'} sent you a message request`, `/messages/${data}`, 'notifyMessages');
+    return { ok: true, conversationId: data as string };
+  }, [meId, me, supabase, loadMessaging, notify]);
+
+  const respondToMessageRequest = useCallback((conversationId: string, accept: boolean) => {
+    const conv = conversations.find((c) => c.id === conversationId);
+    setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, status: accept ? 'accepted' : 'declined' } : c)));
+    supabase.rpc('respond_to_message_request', { conv: conversationId, accept }).then(({ error }: any) => {
+      if (error) { console.error(error); loadMessaging(); toast(dmError(error.message)); return; }
+      if (accept && conv) notify(conv.requesterId, 'message_accepted', `${me?.name ?? 'Someone'} accepted your message request`, `/messages/${conversationId}`, 'notifyMessages');
+    });
+  }, [conversations, supabase, loadMessaging, notify, me, toast]);
+
+  const sendMessage = useCallback(async (conversationId: string, body: string) => {
+    const text = body.trim();
+    const conv = conversations.find((c) => c.id === conversationId);
+    if (!meId || !conv || !text) return false;
+    const tempId = 'tmp-' + uid();
+    const now = new Date().toISOString();
+    setDms((prev) => [...prev, { id: tempId, conversationId, senderId: meId, body: text, createdAt: now }]);
+    const { data, error } = await supabase.rpc('send_message', { conv: conversationId, msg: text });
+    if (error) {
+      console.error(error);
+      setDms((prev) => prev.filter((m) => m.id !== tempId));
+      toast(dmError(error.message));
+      return false;
+    }
+    setDms((prev) => prev.map((m) => (m.id === tempId ? { ...m, id: data as string } : m)));
+    setConversations((prev) => prev.map((c) => (c.id === conversationId
+      ? { ...c, updatedAt: now, ...(c.requesterId === meId ? { requesterLastReadAt: now } : { recipientLastReadAt: now }) }
+      : c)));
+    const otherId = conv.requesterId === meId ? conv.recipientId : conv.requesterId;
+    const other = profiles.find((p) => p.id === otherId);
+    if (other?.notifyMessages !== false) {
+      fetch('/api/send-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: otherId, title: "Where's Joe?", body: `${me?.name ?? 'Someone'} sent you a message`, url: `/messages/${conversationId}` }),
+      }).catch(() => {});
+    }
+    return true;
+  }, [meId, me, conversations, profiles, supabase, toast]);
+
+  const markConversationRead = useCallback((conversationId: string) => {
+    if (!meId) return;
+    const now = new Date().toISOString();
+    setConversations((prev) => prev.map((c) => (c.id === conversationId
+      ? (c.requesterId === meId ? { ...c, requesterLastReadAt: now } : { ...c, recipientLastReadAt: now })
+      : c)));
+    supabase.rpc('mark_conversation_read', { conv: conversationId }).then(({ error }: any) => {
+      if (error) console.error(error);
+    });
+  }, [meId, supabase]);
+
+  const refreshMessages = useCallback(async () => {
+    if (meId) await loadMessaging();
+  }, [meId, loadMessaging]);
+
+  const blockUser = useCallback((userId: string) => {
+    if (!meId || userId === meId) return;
+    setBlockedIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+    supabase.from('user_blocks').insert({ blocker_id: meId, blocked_id: userId }).then(({ error }: any) => {
+      if (error) { console.error(error); setBlockedIds((prev) => prev.filter((x) => x !== userId)); toast("Couldn't block that person — please try again."); }
+    });
+  }, [meId, supabase, toast]);
+
+  const unblockUser = useCallback((userId: string) => {
+    if (!meId) return;
+    setBlockedIds((prev) => prev.filter((x) => x !== userId));
+    supabase.from('user_blocks').delete().eq('blocker_id', meId).eq('blocked_id', userId).then(({ error }: any) => {
+      if (error) { console.error(error); loadBlocks(); toast("Couldn't unblock that person — please try again."); }
+    });
+  }, [meId, supabase, loadBlocks, toast]);
+
+  const reportUser = useCallback(async (userId: string, reason: ReportReason, details: string, conversationId?: string) => {
+    if (!meId) return false;
+    const evidence = conversationId
+      ? dms.filter((m) => m.conversationId === conversationId && m.senderId === userId).slice(-5).map((m) => m.body).join('\n---\n')
+      : '';
+    const { error } = await supabase.from('message_reports').insert({
+      reporter_id: meId, reported_user_id: userId, conversation_id: conversationId ?? null,
+      reason, details, evidence,
+    });
+    if (error) { console.error(error); toast("Couldn't send your report — please try again."); return false; }
+    return true;
+  }, [meId, dms, supabase, toast]);
+
+  const resolveMessageReport = useCallback((id: string) => {
+    setReports((prev) => prev.map((r) => (r.id === id ? { ...r, status: 'resolved' } : r)));
+    supabase.from('message_reports').update({ status: 'resolved' }).eq('id', id).then(({ error }: any) => {
+      if (error) { console.error(error); loadReports(); toast("Couldn't update that report — please try again."); }
+    });
+  }, [supabase, loadReports, toast]);
+
+  const reportsOut = useMemo<MessageReport[]>(
+    () => reports.map((r) => ({
+      ...r,
+      reporterName: r.reporterId ? profiles.find((p) => p.id === r.reporterId)?.name : undefined,
+      reportedName: r.reportedUserId ? profiles.find((p) => p.id === r.reportedUserId)?.name : undefined,
+    })),
+    [reports, profiles],
+  );
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: profiles, cafes,
     posts: postsOut, comments, saves: mySaves, lists: myLists,
     suggestions: suggestionsOut, editSuggestions: editSuggestionsOut, claims: claimsOut,
     notifications: notificationsOut, notes, tagSuggestions: tagSuggestionsOut, follows,
+    conversations, messageReports: reportsOut,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, noteForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
-    feedPosts, postsForCafe,
+    feedPosts, postsForCafe, conversationWith, messagesFor, unreadMessageCount, isBlocked,
     signIn, signUp, signOut, updateProfile,
     toggleLike, addComment, toggleFollow, createPost,
     toggleSave, sipCafe, createList, addToList, removeFromList, suggestCafe,
@@ -820,6 +1015,8 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     enablePush, disablePush,
     setCafeNote,
     toggleCafeTag, suggestCafeTag, resolveTagSuggestion,
+    requestMessage, respondToMessageRequest, sendMessage, markConversationRead, refreshMessages,
+    blockUser, unblockUser, reportUser, resolveMessageReport,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

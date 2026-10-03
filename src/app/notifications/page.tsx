@@ -18,6 +18,8 @@ const ICONS: Record<NotificationType, string> = {
   claim_rejected: 'M18 6L6 18M6 6l12 12',
   tag_approved: 'M20 6L9 17l-5-5',
   tag_rejected: 'M18 6L6 18M6 6l12 12',
+  message_request: 'M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z',
+  message_accepted: 'M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z',
 };
 
 export default function NotificationsPage() {
