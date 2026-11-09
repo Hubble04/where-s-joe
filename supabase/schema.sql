@@ -538,8 +538,8 @@ create policy p_tag_suggestions_delete on public.cafe_tag_suggestions for delete
 -- =========================================================================
 create table if not exists public.conversations (
   id                     uuid primary key default gen_random_uuid(),
-  requester_id           uuid not null references auth.users (id) on delete cascade,
-  recipient_id           uuid not null references auth.users (id) on delete cascade,
+  requester_id           uuid references auth.users (id) on delete set null,
+  recipient_id           uuid references auth.users (id) on delete set null,
   status                 text not null default 'pending' check (status in ('pending','accepted','declined')),
   created_at             timestamptz not null default now(),
   updated_at             timestamptz not null default now(),
@@ -547,15 +547,17 @@ create table if not exists public.conversations (
   recipient_last_read_at timestamptz not null default 'epoch',
   check (requester_id <> recipient_id)
 );
-create unique index if not exists conversations_pair_idx
-  on public.conversations (least(requester_id, recipient_id), greatest(requester_id, recipient_id));
+drop index if exists public.conversations_pair_idx;
+create unique index conversations_pair_idx
+  on public.conversations (least(requester_id, recipient_id), greatest(requester_id, recipient_id))
+  where requester_id is not null and recipient_id is not null;
 create index if not exists conversations_requester_idx on public.conversations (requester_id);
 create index if not exists conversations_recipient_idx on public.conversations (recipient_id);
 
 create table if not exists public.direct_messages (
   id              uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references public.conversations (id) on delete cascade,
-  sender_id       uuid not null references auth.users (id) on delete cascade,
+  sender_id       uuid references auth.users (id) on delete set null,
   body            text not null check (char_length(body) between 1 and 2000),
   created_at      timestamptz not null default now()
 );
@@ -581,6 +583,18 @@ create table if not exists public.message_reports (
   created_at       timestamptz not null default now()
 );
 create index if not exists message_reports_status_idx on public.message_reports (status);
+
+-- Upgrade path for databases created before "keep chats when someone deletes their account":
+-- when a person is deleted, the other person keeps the chat and the deleted side becomes NULL ("Deleted user").
+alter table public.conversations   alter column requester_id drop not null;
+alter table public.conversations   alter column recipient_id drop not null;
+alter table public.direct_messages alter column sender_id    drop not null;
+alter table public.conversations   drop constraint if exists conversations_requester_id_fkey;
+alter table public.conversations   add constraint conversations_requester_id_fkey foreign key (requester_id) references auth.users (id) on delete set null;
+alter table public.conversations   drop constraint if exists conversations_recipient_id_fkey;
+alter table public.conversations   add constraint conversations_recipient_id_fkey foreign key (recipient_id) references auth.users (id) on delete set null;
+alter table public.direct_messages drop constraint if exists direct_messages_sender_id_fkey;
+alter table public.direct_messages add constraint direct_messages_sender_id_fkey foreign key (sender_id) references auth.users (id) on delete set null;
 
 alter table public.conversations   enable row level security;
 alter table public.direct_messages enable row level security;
@@ -689,6 +703,7 @@ begin
   select * into c from public.conversations
     where id = conv and (requester_id = me or recipient_id = me);
   if not found then raise exception 'Conversation not found.'; end if;
+  if c.requester_id is null or c.recipient_id is null then raise exception 'This person has deleted their account.'; end if;
   if c.status <> 'accepted' then raise exception 'This conversation isn''t open yet.'; end if;
   if public.users_blocked_between(c.requester_id, c.recipient_id) then raise exception 'You can''t message this person.'; end if;
   insert into public.direct_messages (conversation_id, sender_id, body) values (conv, me, clean) returning id into new_id;
@@ -760,6 +775,63 @@ create policy p_post_reports_admin on public.post_reports for update to authenti
   using (public.is_admin()) with check (public.is_admin());
 drop policy if exists p_post_reports_delete on public.post_reports;
 create policy p_post_reports_delete on public.post_reports for delete to authenticated
+  using (public.is_admin());
+
+-- =========================================================================
+-- cafe_reports  (a user flagging a café listing, e.g. one that began as a suggestion)
+-- profile_reports  (a user flagging another person's profile)
+-- Same shape as post_reports: one report per person per target.
+-- =========================================================================
+create table if not exists public.cafe_reports (
+  id          uuid primary key default gen_random_uuid(),
+  cafe_id     uuid not null references public.cafes (id) on delete cascade,
+  reporter_id uuid references auth.users (id) on delete set null,
+  reason      text not null check (reason in ('Spam','Offensive','Wrong info','Other')),
+  status      text not null default 'pending' check (status in ('pending','dismissed')),
+  created_at  timestamptz not null default now(),
+  unique (cafe_id, reporter_id)
+);
+create index if not exists cafe_reports_status_idx on public.cafe_reports (status);
+alter table public.cafe_reports enable row level security;
+
+drop policy if exists p_cafe_reports_read on public.cafe_reports;
+create policy p_cafe_reports_read on public.cafe_reports for select to authenticated
+  using (reporter_id = auth.uid() or public.is_admin());
+drop policy if exists p_cafe_reports_write on public.cafe_reports;
+create policy p_cafe_reports_write on public.cafe_reports for insert to authenticated
+  with check (reporter_id = auth.uid());
+drop policy if exists p_cafe_reports_admin on public.cafe_reports;
+create policy p_cafe_reports_admin on public.cafe_reports for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+drop policy if exists p_cafe_reports_delete on public.cafe_reports;
+create policy p_cafe_reports_delete on public.cafe_reports for delete to authenticated
+  using (public.is_admin());
+
+create table if not exists public.profile_reports (
+  id               uuid primary key default gen_random_uuid(),
+  reported_user_id uuid not null references auth.users (id) on delete cascade,
+  reporter_id      uuid references auth.users (id) on delete set null,
+  reason           text not null check (reason in ('Spam','Offensive','Impersonation','Other')),
+  status           text not null default 'pending' check (status in ('pending','dismissed')),
+  created_at       timestamptz not null default now(),
+  unique (reported_user_id, reporter_id),
+  check (reported_user_id <> reporter_id)
+);
+create index if not exists profile_reports_status_idx on public.profile_reports (status);
+alter table public.profile_reports enable row level security;
+
+drop policy if exists p_profile_reports_read on public.profile_reports;
+create policy p_profile_reports_read on public.profile_reports for select to authenticated
+  using (reporter_id = auth.uid() or public.is_admin());
+-- You can only report as yourself, and never your own profile.
+drop policy if exists p_profile_reports_write on public.profile_reports;
+create policy p_profile_reports_write on public.profile_reports for insert to authenticated
+  with check (reporter_id = auth.uid() and reported_user_id <> auth.uid());
+drop policy if exists p_profile_reports_admin on public.profile_reports;
+create policy p_profile_reports_admin on public.profile_reports for update to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+drop policy if exists p_profile_reports_delete on public.profile_reports;
+create policy p_profile_reports_delete on public.profile_reports for delete to authenticated
   using (public.is_admin());
 
 -- =========================================================================

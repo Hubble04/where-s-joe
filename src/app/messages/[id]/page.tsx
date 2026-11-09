@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
-import { cn, timeAgo } from '@/lib/utils';
+import { cn, timeAgo, handleOf } from '@/lib/utils';
+import { DELETED_USER } from '@/lib/types';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { Button } from '@/components/Button';
 import { SignInPrompt } from '@/components/ui';
@@ -49,9 +50,10 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   }
 
   const otherId = conv.requesterId === me.id ? conv.recipientId : conv.requesterId;
-  const other = getUser(otherId);
+  const deleted = !otherId;
+  const other = otherId ? getUser(otherId) : DELETED_USER;
   const iAmRecipient = conv.recipientId === me.id;
-  const iBlocked = isBlocked(otherId);
+  const iBlocked = otherId ? isBlocked(otherId) : false;
 
   async function submit() {
     if (!conv || !text.trim() || sending) return;
@@ -67,20 +69,29 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         <Link href="/messages" aria-label="Back to messages" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-parchment">
           <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-racing-700" strokeWidth={1.8}><path d="M15 6l-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </Link>
-        <Link href={`/user/${other.id}`} className="flex min-w-0 flex-1 items-center gap-2.5">
-          <ImageWithFallback src={other.profilePhotoUrl} alt={other.name} seed={other.name} className="h-9 w-9 shrink-0 rounded-full" />
-          <span className="min-w-0">
-            <span className="block truncate font-heading text-base leading-tight text-racing-700">{other.name}</span>
-            <span className="block truncate font-mono text-[0.65rem] text-coffee/55">@{other.username}</span>
-          </span>
-        </Link>
+        {deleted ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <ImageWithFallback src="" alt="Deleted user" seed="deleted" className="h-9 w-9 shrink-0 rounded-full" />
+            <span className="block truncate font-heading text-base leading-tight text-coffee/60">Deleted user</span>
+          </div>
+        ) : (
+          <Link href={`/user/${other.id}`} className="flex min-w-0 flex-1 items-center gap-2.5">
+            <ImageWithFallback src={other.profilePhotoUrl} alt={other.name} seed={other.name} className="h-9 w-9 shrink-0 rounded-full" />
+            <span className="min-w-0">
+              <span className="block truncate font-heading text-base leading-tight text-racing-700">{other.name}</span>
+              <span className="block truncate font-mono text-[0.65rem] text-coffee/55">{handleOf(other)}</span>
+            </span>
+          </Link>
+        )}
         <button onClick={() => refreshMessages()} aria-label="Refresh" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-coffee/60 hover:bg-parchment">
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth={1.8}><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
-        <button onClick={() => setMenuOpen((o) => !o)} aria-label="More" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-coffee/60 hover:bg-parchment">
-          <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
-        </button>
-        {menuOpen && (
+        {!deleted && (
+          <button onClick={() => setMenuOpen((o) => !o)} aria-label="More" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-coffee/60 hover:bg-parchment">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+          </button>
+        )}
+        {menuOpen && otherId && (
           <div className="absolute right-4 top-14 z-20 w-40 overflow-hidden rounded-card border border-racing-100 bg-ivory shadow-lift">
             <button onClick={() => { setMenuOpen(false); setReporting(true); }} className="block w-full px-4 py-2.5 text-left font-mono text-xs text-coffee/80 hover:bg-parchment">Report</button>
             {iBlocked ? (
@@ -133,11 +144,16 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         <div ref={endRef} />
       </div>
 
-      {conv.status === 'accepted' && (
+      {conv.status === 'accepted' && deleted && (
+        <p className="border-t border-racing-100 px-4 py-4 text-center font-mono text-xs text-coffee/55">
+          This person deleted their account. You can still read this chat, but you can&rsquo;t reply.
+        </p>
+      )}
+      {conv.status === 'accepted' && !deleted && (
         iBlocked ? (
           <div className="border-t border-racing-100 px-4 py-3 text-center">
             <p className="mb-2 font-mono text-xs text-coffee/55">You blocked @{other.username}.</p>
-            <Button variant="outline" size="sm" onClick={() => unblockUser(otherId)}>Unblock</Button>
+            <Button variant="outline" size="sm" onClick={() => otherId && unblockUser(otherId)}>Unblock</Button>
           </div>
         ) : (
           <div className="flex items-end gap-2 border-t border-racing-100 px-4 py-3">
@@ -152,8 +168,8 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         )
       )}
 
-      {blocking && <BlockUserModal user={other} onClose={() => setBlocking(false)} />}
-      {reporting && <ReportUserModal user={other} conversationId={conv.id} onClose={() => setReporting(false)} />}
+      {blocking && !deleted && <BlockUserModal user={other} onClose={() => setBlocking(false)} />}
+      {reporting && !deleted && <ReportUserModal user={other} conversationId={conv.id} onClose={() => setReporting(false)} />}
     </div>
   );
 }

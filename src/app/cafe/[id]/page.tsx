@@ -13,11 +13,12 @@ import { MapView } from '@/components/MapView';
 import { PostCard } from '@/components/PostCard';
 import { Button } from '@/components/Button';
 import { SectionTitle, SignInPrompt, Modal } from '@/components/ui';
+import { ReportCafeModal } from '@/components/MessagingModals';
 
 export default function CafePage({ params }: { params: { id: string } }) {
   const { id } = params;
   const router = useRouter();
-  const { me, getCafe, postsForCafe, savesForCafe, noteForCafe, setCafeNote, submitEditSuggestion, submitClaim, suggestCafeTag } = useStore();
+  const { me, getCafe, postsForCafe, savesForCafe, noteForCafe, setCafeNote, submitEditSuggestion, submitClaim, suggestCafeTag, hasReportedCafe } = useStore();
   const [authPrompt, setAuthPrompt] = useState(false);
   const [directionsPrompt, setDirectionsPrompt] = useState(false);
   const [reviewPrompt, setReviewPrompt] = useState(false);
@@ -35,6 +36,7 @@ export default function CafePage({ params }: { params: { id: string } }) {
   const [selectedTags, setSelectedTags] = useState<{ category: string; tag: string }[]>([]);
   const [otherTag, setOtherTag] = useState('');
   const [tagsSent, setTagsSent] = useState(false);
+  const [reportPrompt, setReportPrompt] = useState(false);
   const storedNote = noteForCafe(id);
   const [noteDraft, setNoteDraft] = useState(storedNote);
   const [noteDirty, setNoteDirty] = useState(false);
@@ -232,7 +234,16 @@ export default function CafePage({ params }: { params: { id: string } }) {
         >
           Claim This Café
         </button>
+        <button
+          onClick={() => (me ? setReportPrompt(true) : setAuthPrompt(true))}
+          disabled={hasReportedCafe(cafe.id)}
+          className="mt-2 w-full rounded-pill border border-racing-100 px-4 py-2.5 text-center font-mono text-xs text-coffee/55 transition-colors hover:border-racing-300 hover:text-coffee/80 disabled:opacity-50"
+        >
+          {hasReportedCafe(cafe.id) ? 'You reported this café' : 'Report this café'}
+        </button>
       </div>
+
+      {reportPrompt && <ReportCafeModal cafeId={cafe.id} onClose={() => setReportPrompt(false)} />}
 
       <Modal open={authPrompt} onClose={() => setAuthPrompt(false)} title="Join Where's Joe?">
         <SignInPrompt message="Log in to save cafés, stamp your passport, and post to the community." />

@@ -6,10 +6,11 @@ import { createClient } from '@supabase/supabase-js';
  *
  * Who is deleted comes only from the caller's access token, never from the
  * request body, so a person can only ever delete themselves. Posts, comments,
- * likes, follows, saves, lists, notes, notifications, messages, blocks and the
- * profile are removed automatically by the database (every table references
- * the login with ON DELETE CASCADE); this route clears the few records that
- * would otherwise be left behind (suggestions/claims) and their uploaded photos.
+ * likes, follows, saves, lists, notes, notifications, blocks and the profile are
+ * removed automatically by the database (those tables reference the login with
+ * ON DELETE CASCADE); this route clears the few records that
+ * would otherwise be left behind (suggestions/claims), unanswered chat requests, and their uploaded photos.
+ * Accepted chats are kept for the other person and show this person as "Deleted user".
  */
 export async function POST(req: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
@@ -43,6 +44,28 @@ export async function POST(req: NextRequest) {
     const { error } = await admin.from(table).delete().eq('submitted_by', userId);
     if (error) {
       console.error(`delete-account: clearing ${table} failed`, error);
+      return NextResponse.json({ ok: false, error: 'Something went wrong deleting your data. Please try again.' }, { status: 500 });
+    }
+  }
+
+  // Chats: accepted conversations stay for the other person (the database turns this person into
+  // "Deleted user"). Unanswered/declined requests, and chats whose other side is already gone, have no
+  // history worth keeping, so remove those (their messages go with them).
+  const { data: convs, error: convError } = await admin
+    .from('conversations')
+    .select('id, status, requester_id, recipient_id')
+    .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`);
+  if (convError) {
+    console.error('delete-account: reading conversations failed', convError);
+    return NextResponse.json({ ok: false, error: 'Something went wrong deleting your data. Please try again.' }, { status: 500 });
+  }
+  const dropIds = (convs ?? [])
+    .filter((c) => c.status !== 'accepted' || c.requester_id === null || c.recipient_id === null)
+    .map((c) => c.id);
+  if (dropIds.length > 0) {
+    const { error } = await admin.from('conversations').delete().in('id', dropIds);
+    if (error) {
+      console.error('delete-account: removing conversations failed', error);
       return NextResponse.json({ ok: false, error: 'Something went wrong deleting your data. Please try again.' }, { status: 500 });
     }
   }

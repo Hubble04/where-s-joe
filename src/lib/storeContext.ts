@@ -5,6 +5,7 @@ import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
   AppNotification, CafeNote, CafeTagSuggestion, Conversation, DirectMessage, MessageReport, ReportReason, PostReport, PostReportReason,
+  CafeReport, CafeReportReason, ProfileReport, ProfileReportReason,
 } from './types';
 
 /**
@@ -20,6 +21,8 @@ export interface StoreValue {
   users: Profile[];
   cafes: Cafe[];
   posts: Post[];
+  /** Every post, ignoring blocks. For admin/moderation views only. */
+  allPosts: Post[];
   comments: Comment[];
   saves: CafeSave[];
   lists: CustomList[];
@@ -33,6 +36,8 @@ export interface StoreValue {
   conversations: Conversation[];
   messageReports: MessageReport[];
   postReports: PostReport[];
+  cafeReports: CafeReport[];
+  profileReports: ProfileReport[];
   blockedIds: string[];
 
   getUser: (id: string) => Profile;
@@ -101,6 +106,12 @@ export interface StoreValue {
   hasReportedPost: (postId: string) => boolean;
   reportPost: (postId: string, reason: PostReportReason) => Promise<boolean>;
   dismissPostReports: (postId: string) => void;
+  hasReportedCafe: (cafeId: string) => boolean;
+  reportCafe: (cafeId: string, reason: CafeReportReason) => Promise<boolean>;
+  dismissCafeReports: (cafeId: string) => void;
+  hasReportedProfile: (userId: string) => boolean;
+  reportProfile: (userId: string, reason: ProfileReportReason) => Promise<boolean>;
+  dismissProfileReports: (userId: string) => void;
   deleteAccount: () => Promise<{ ok: boolean; error?: string }>;
 }
 

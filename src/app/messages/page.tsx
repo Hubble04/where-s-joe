@@ -2,11 +2,11 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
-import type { Conversation } from '@/lib/types';
+import { DELETED_USER, type Conversation } from '@/lib/types';
 import { EmptyState, SignInPrompt } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
-import { timeAgo } from '@/lib/utils';
+import { timeAgo, handleOf } from '@/lib/utils';
 
 export default function MessagesPage() {
   const { me, conversations, refreshMessages } = useStore();
@@ -74,7 +74,7 @@ export default function MessagesPage() {
 
 function RequestRow({ conv }: { conv: Conversation }) {
   const { getUser, messagesFor, respondToMessageRequest } = useStore();
-  const user = getUser(conv.requesterId);
+  const user = conv.requesterId ? getUser(conv.requesterId) : DELETED_USER;
   const first = messagesFor(conv.id)[0];
   return (
     <div className="rounded-card bg-amber/5 p-3 shadow-card">
@@ -82,7 +82,7 @@ function RequestRow({ conv }: { conv: Conversation }) {
         <ImageWithFallback src={user.profilePhotoUrl} alt={user.name} seed={user.name} className="h-10 w-10 shrink-0 rounded-full" />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
-            <span className="truncate font-mono text-sm text-racing-700">@{user.username}</span>
+            <span className="truncate font-mono text-sm text-racing-700">{handleOf(user)}</span>
             <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(conv.createdAt)}</span>
           </span>
           {first && <span className="mt-0.5 line-clamp-2 block text-sm text-coffee/80">{first.body}</span>}
@@ -100,7 +100,7 @@ function ChatRow({ conv }: { conv: Conversation }) {
   const { me, getUser, messagesFor, isBlocked } = useStore();
   if (!me) return null;
   const otherId = conv.requesterId === me.id ? conv.recipientId : conv.requesterId;
-  const user = getUser(otherId);
+  const user = otherId ? getUser(otherId) : DELETED_USER;
   const msgs = messagesFor(conv.id);
   const last = msgs[msgs.length - 1];
   const lastRead = conv.requesterId === me.id ? conv.requesterLastReadAt : conv.recipientLastReadAt;
@@ -110,11 +110,11 @@ function ChatRow({ conv }: { conv: Conversation }) {
       <ImageWithFallback src={user.profilePhotoUrl} alt={user.name} seed={user.name} className="h-10 w-10 shrink-0 rounded-full" />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
-          <span className="truncate font-mono text-sm text-racing-700">@{user.username}</span>
+          <span className="truncate font-mono text-sm text-racing-700">{handleOf(user)}</span>
           {last && <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(last.createdAt)}</span>}
         </span>
         <span className={`mt-0.5 block truncate text-sm ${unread ? 'text-coffee' : 'text-coffee/60'}`}>
-          {isBlocked(otherId) ? 'Blocked' : last ? `${last.senderId === me.id ? 'You: ' : ''}${last.body}` : 'No messages yet'}
+          {otherId && isBlocked(otherId) ? 'Blocked' : last ? `${last.senderId === me.id ? 'You: ' : ''}${last.body}` : 'No messages yet'}
         </span>
       </span>
       {unread && <span className="h-2 w-2 shrink-0 rounded-full bg-amber" />}
@@ -124,12 +124,12 @@ function ChatRow({ conv }: { conv: Conversation }) {
 
 function SentRow({ conv }: { conv: Conversation }) {
   const { getUser } = useStore();
-  const user = getUser(conv.recipientId);
+  const user = conv.recipientId ? getUser(conv.recipientId) : DELETED_USER;
   return (
     <Link href={`/messages/${conv.id}`} className="flex items-center gap-3 rounded-card bg-ivory px-3 py-3 opacity-80 shadow-card">
       <ImageWithFallback src={user.profilePhotoUrl} alt={user.name} seed={user.name} className="h-9 w-9 shrink-0 rounded-full" />
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-mono text-sm text-racing-700">@{user.username}</span>
+        <span className="block truncate font-mono text-sm text-racing-700">{handleOf(user)}</span>
         <span className="block font-mono text-[0.65rem] text-coffee/50">Request sent · {timeAgo(conv.createdAt)}</span>
       </span>
     </Link>

@@ -9,6 +9,7 @@ import type {
   SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
   AppNotification, NotificationType, CafeNote, CafeTagSuggestion,
   Conversation, DirectMessage, MessageReport, ReportReason, PostReport, PostReportReason,
+  CafeReport, CafeReportReason, ProfileReport, ProfileReportReason,
 } from './types';
 import {
   MOCK_CAFES, MOCK_USERS, MOCK_ME, MOCK_POSTS, MOCK_COMMENTS, MOCK_FOLLOWS,
@@ -45,6 +46,8 @@ interface Persisted {
   blockedIds: string[];
   reports: MessageReport[];
   postReports: PostReport[];
+  cafeReports: CafeReport[];
+  profileReports: ProfileReport[];
   removedPostIds: string[];
   cafeStatusOverrides: Record<string, Cafe['status']>;
   cafeEstablishmentOverrides: Record<string, string>;
@@ -99,6 +102,8 @@ function defaultState(): Persisted {
     blockedIds: [],
     reports: [],
     postReports: [],
+    cafeReports: [],
+    profileReports: [],
     removedPostIds: [],
     cafeStatusOverrides: {},
     cafeEstablishmentOverrides: {},
@@ -209,6 +214,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     [s.suggestions, me],
   );
 
+  const allPosts = useMemo(() => s.posts.filter((p) => !s.removedPostIds.includes(p.id)), [s.posts, s.removedPostIds]);
   const visiblePosts = useMemo(
     () => s.posts.filter((p) => !s.removedPostIds.includes(p.id) && !s.blockedIds.includes(p.userId)),
     [s.posts, s.removedPostIds, s.blockedIds],
@@ -566,7 +572,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     const conv = s.conversations.find((c) => c.id === conversationId);
     if (!me || !conv || !text || text.length > 2000 || conv.status !== 'accepted') return false;
     const otherId = conv.requesterId === me.id ? conv.recipientId : conv.requesterId;
-    if (s.blockedIds.includes(otherId)) return false;
+    if (!otherId || s.blockedIds.includes(otherId)) return false;
     const now = nowISO();
     const msg: DirectMessage = { id: uid(), conversationId, senderId: me.id, body: text, createdAt: now };
     setS((p) => ({
@@ -634,12 +640,49 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     setS((p) => ({ ...p, postReports: p.postReports.map((r) => (r.postId === postId && r.status === 'pending' ? { ...r, status: 'dismissed' } : r)) }));
   }, []);
 
+  const hasReportedCafe = useCallback(
+    (cafeId: string) => !!me && s.cafeReports.some((r) => r.cafeId === cafeId && r.reporterId === me.id),
+    [s.cafeReports, me],
+  );
+
+  const reportCafe = useCallback(async (cafeId: string, reason: CafeReportReason) => {
+    if (!me) return false;
+    if (s.cafeReports.some((r) => r.cafeId === cafeId && r.reporterId === me.id)) return true;
+    const report: CafeReport = { id: uid(), cafeId, reporterId: me.id, reason, status: 'pending', createdAt: nowISO(), cafeName: getCafe(cafeId)?.name };
+    setS((p) => ({ ...p, cafeReports: [report, ...p.cafeReports] }));
+    return true;
+  }, [me, s.cafeReports, getCafe]);
+
+  const dismissCafeReports = useCallback((cafeId: string) => {
+    setS((p) => ({ ...p, cafeReports: p.cafeReports.map((r) => (r.cafeId === cafeId && r.status === 'pending' ? { ...r, status: 'dismissed' } : r)) }));
+  }, []);
+
+  const hasReportedProfile = useCallback(
+    (userId: string) => !!me && s.profileReports.some((r) => r.reportedUserId === userId && r.reporterId === me.id),
+    [s.profileReports, me],
+  );
+
+  const reportProfile = useCallback(async (userId: string, reason: ProfileReportReason) => {
+    if (!me || userId === me.id) return false;
+    if (s.profileReports.some((r) => r.reportedUserId === userId && r.reporterId === me.id)) return true;
+    const report: ProfileReport = { id: uid(), reportedUserId: userId, reporterId: me.id, reason, status: 'pending', createdAt: nowISO() };
+    setS((p) => ({ ...p, profileReports: [report, ...p.profileReports] }));
+    return true;
+  }, [me, s.profileReports]);
+
+  const dismissProfileReports = useCallback((userId: string) => {
+    setS((p) => ({ ...p, profileReports: p.profileReports.map((r) => (r.reportedUserId === userId && r.status === 'pending' ? { ...r, status: 'dismissed' } : r)) }));
+  }, []);
+
   /** Wipes this person's own data from the browser and signs them out. (Seeded demo people stay as fixtures.) */
   const deleteAccount = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
     if (!me) return { ok: false, error: 'Not signed in.' };
     const id = me.id;
     setS((p) => {
-      const goneConvs = new Set(p.conversations.filter((c) => c.requesterId === id || c.recipientId === id).map((c) => c.id));
+      // Accepted chats stay for the other person (this side becomes null = "Deleted user");
+      // unanswered/declined requests, and chats whose other side is already gone, are removed.
+      const mine = p.conversations.filter((c) => c.requesterId === id || c.recipientId === id);
+      const goneConvs = new Set(mine.filter((c) => c.status !== 'accepted' || c.requesterId === null || c.recipientId === null).map((c) => c.id));
       const { [id]: _removed, ...profileOverrides } = p.profileOverrides;
       return {
         ...p,
@@ -658,11 +701,19 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
         notes: p.notes.filter((x) => x.userId !== id),
         tagSuggestions: p.tagSuggestions.filter((x) => x.submittedBy !== id),
         notifications: p.notifications.filter((x) => x.userId !== id && x.actorId !== id),
-        conversations: p.conversations.filter((c) => !goneConvs.has(c.id)),
-        directMessages: p.directMessages.filter((m) => !goneConvs.has(m.conversationId)),
+        conversations: p.conversations
+          .filter((c) => !goneConvs.has(c.id))
+          .map((c) => ({ ...c, requesterId: c.requesterId === id ? null : c.requesterId, recipientId: c.recipientId === id ? null : c.recipientId })),
+        directMessages: p.directMessages
+          .filter((m) => !goneConvs.has(m.conversationId))
+          .map((m) => (m.senderId === id ? { ...m, senderId: null } : m)),
         blockedIds: [],
         postReports: p.postReports
           .filter((r) => !p.posts.some((x) => x.id === r.postId && x.userId === id))
+          .map((r) => (r.reporterId === id ? { ...r, reporterId: null } : r)),
+        cafeReports: p.cafeReports.map((r) => (r.reporterId === id ? { ...r, reporterId: null } : r)),
+        profileReports: p.profileReports
+          .filter((r) => r.reportedUserId !== id)
           .map((r) => (r.reporterId === id ? { ...r, reporterId: null } : r)),
       };
     });
@@ -680,11 +731,17 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
 
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: allUsers, cafes: allCafes,
-    posts: visiblePosts, comments: visibleComments, saves: s.saves, lists: s.lists,
+    posts: visiblePosts, allPosts, comments: visibleComments, saves: s.saves, lists: s.lists,
     suggestions: s.suggestions, editSuggestions: s.editSuggestions, claims: s.claims,
     notifications: s.notifications, notes: s.notes, tagSuggestions: s.tagSuggestions, follows: s.follows,
     conversations: myConversations, messageReports: reportsOut,
     postReports: s.postReports.map((r) => ({ ...r, reporterName: r.reporterId ? allUsers.find((u) => u.id === r.reporterId)?.name : undefined })),
+    cafeReports: s.cafeReports.map((r) => ({ ...r, reporterName: r.reporterId ? allUsers.find((u) => u.id === r.reporterId)?.name : undefined })),
+    profileReports: s.profileReports.map((r) => ({
+      ...r,
+      reporterName: r.reporterId ? allUsers.find((u) => u.id === r.reporterId)?.name : undefined,
+      reportedName: allUsers.find((u) => u.id === r.reportedUserId)?.name,
+    })),
     blockedIds: s.blockedIds,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, noteForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
@@ -701,6 +758,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
     requestMessage, respondToMessageRequest, sendMessage, markConversationRead, refreshMessages,
     blockUser, unblockUser, reportUser, resolveMessageReport,
     hasReportedPost, reportPost, dismissPostReports, deleteAccount,
+    hasReportedCafe, reportCafe, dismissCafeReports, hasReportedProfile, reportProfile, dismissProfileReports,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

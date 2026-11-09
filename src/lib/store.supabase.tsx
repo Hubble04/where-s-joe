@@ -9,6 +9,7 @@ import type {
   SaveType, Visibility, WeekHours, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
   AppNotification, NotificationType, CafeNote, CafeTagSuggestion,
   Conversation, DirectMessage, MessageReport, ReportReason, PostReport, PostReportReason,
+  CafeReport, CafeReportReason, ProfileReport, ProfileReportReason,
 } from './types';
 import { getSupabaseBrowser } from './supabase/client';
 import { StoreContext, type StoreValue } from './storeContext';
@@ -141,9 +142,22 @@ function rowToPostReport(r: any): PostReport {
   };
 }
 
+function rowToCafeReport(r: any): CafeReport {
+  return {
+    id: r.id, cafeId: r.cafe_id, reporterId: r.reporter_id, reason: r.reason, status: r.status, createdAt: r.created_at,
+    cafeName: r.cafes?.name ?? undefined,
+  };
+}
+
+function rowToProfileReport(r: any): ProfileReport {
+  return {
+    id: r.id, reportedUserId: r.reported_user_id, reporterId: r.reporter_id, reason: r.reason, status: r.status, createdAt: r.created_at,
+  };
+}
+
 /** The messaging database functions raise readable messages; anything else becomes a generic one. */
 function dmError(message: string | undefined): string {
-  const known = /^(You can|This conversation|A conversation|Message must|User not found|Request not found|Not signed in|Conversation not found)/;
+  const known = /^(You can|This conversation|This person|A conversation|Message must|User not found|Request not found|Not signed in|Conversation not found)/;
   return message && known.test(message) ? message : 'Something went wrong — please try again.';
 }
 
@@ -180,6 +194,8 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const [blockedIds, setBlockedIds] = useState<string[]>([]);
   const [reports, setReports] = useState<MessageReport[]>([]);
   const [postReports, setPostReports] = useState<PostReport[]>([]);
+  const [cafeReports, setCafeReports] = useState<CafeReport[]>([]);
+  const [profileReports, setProfileReports] = useState<ProfileReport[]>([]);
 
   // --- loaders ---------------------------------------------------------
   const loadProfiles = useCallback(async () => {
@@ -318,6 +334,18 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     setPostReports((data ?? []).map(rowToPostReport));
   }, [supabase]);
 
+  const loadCafeReports = useCallback(async () => {
+    const { data, error } = await supabase.from('cafe_reports').select('*, cafes(name)').order('created_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    setCafeReports((data ?? []).map(rowToCafeReport));
+  }, [supabase]);
+
+  const loadProfileReports = useCallback(async () => {
+    const { data, error } = await supabase.from('profile_reports').select('*').order('created_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    setProfileReports((data ?? []).map(rowToProfileReport));
+  }, [supabase]);
+
   // --- auth session ------------------------------------------------------
   useEffect(() => {
     let alive = true;
@@ -347,6 +375,8 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
         meId ? loadBlocks() : Promise.resolve(setBlockedIds([])),
         loadReports(),
         meId ? loadPostReports() : Promise.resolve(setPostReports([])),
+        meId ? loadCafeReports() : Promise.resolve(setCafeReports([])),
+        meId ? loadProfileReports() : Promise.resolve(setProfileReports([])),
       ]);
       if (alive) { setReady(true); everReady.current = true; }
     })();
@@ -367,20 +397,21 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
 
   const visibleComments = useMemo(() => comments.filter((c) => !blockedIds.includes(c.userId)), [comments, blockedIds]);
 
-  const postsOut = useMemo<Post[]>(() => {
+  const allPostsOut = useMemo<Post[]>(() => {
     const cafeById = new Map(cafes.map((c) => [c.id, c] as const));
     const likeCountMap = new Map<string, number>();
     likeRows.forEach((l) => likeCountMap.set(l.postId, (likeCountMap.get(l.postId) ?? 0) + 1));
     const commentCountMap = new Map<string, number>();
     visibleComments.forEach((c) => commentCountMap.set(c.postId, (commentCountMap.get(c.postId) ?? 0) + 1));
-    return posts.filter((p) => !blockedIds.includes(p.userId)).map((p) => ({
+    return posts.map((p) => ({
       ...p,
       cafeName: p.cafeId ? cafeById.get(p.cafeId)?.name : undefined,
       likeCount: likeCountMap.get(p.id) ?? 0,
       commentCount: commentCountMap.get(p.id) ?? 0,
       likedByMe: !!meId && likeRows.some((l) => l.postId === p.id && l.userId === meId),
     }));
-  }, [posts, cafes, likeRows, visibleComments, blockedIds, meId]);
+  }, [posts, cafes, likeRows, visibleComments, meId]);
+  const browsablePosts = useMemo(() => allPostsOut.filter((p) => !blockedIds.includes(p.userId)), [allPostsOut, blockedIds]);
 
   const suggestionsOut = useMemo<SuggestedCafe[]>(
     () => suggestions.map((s) => ({ ...s, submitterName: profiles.find((p) => p.id === s.submittedBy)?.name })),
@@ -437,11 +468,11 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const hasSave = useCallback((cafeId: string, type: SaveType) => savesForCafe(cafeId).some((v) => v.saveType === type), [savesForCafe]);
   const savesByType = useCallback((type: SaveType) => mySaves.filter((v) => v.saveType === type), [mySaves]);
   const listsForMe = useCallback(() => myLists, [myLists]);
-  const myPosts = useCallback(() => postsOut.filter((p) => p.userId === meId), [postsOut, meId]);
+  const myPosts = useCallback(() => browsablePosts.filter((p) => p.userId === meId), [browsablePosts, meId]);
   const mySuggestions = useCallback(() => suggestionsOut.filter((x) => x.submittedBy === meId), [suggestionsOut, meId]);
 
   const feedPosts = useCallback((mode: string) => {
-    let list = [...postsOut];
+    let list = [...browsablePosts];
     if (mode === 'Following' && meId) {
       const ids = new Set(follows.filter((f) => f.followerId === meId).map((f) => f.followingId));
       list = list.filter((p) => ids.has(p.userId) || p.userId === meId);
@@ -452,11 +483,11 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     }
     list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return list;
-  }, [postsOut, follows, meId]);
+  }, [browsablePosts, follows, meId]);
 
   const postsForCafe = useCallback(
-    (cafeId: string) => postsOut.filter((p) => p.cafeId === cafeId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [postsOut],
+    (cafeId: string) => browsablePosts.filter((p) => p.cafeId === cafeId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [browsablePosts],
   );
 
   const conversationWith = useCallback(
@@ -928,6 +959,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     const text = body.trim();
     const conv = conversations.find((c) => c.id === conversationId);
     if (!meId || !conv || !text) return false;
+    if (!conv.requesterId || !conv.recipientId) { toast('This person has deleted their account.'); return false; }
     const tempId = 'tmp-' + uid();
     const now = new Date().toISOString();
     setDms((prev) => [...prev, { id: tempId, conversationId, senderId: meId, body: text, createdAt: now }]);
@@ -1039,6 +1071,52 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     });
   }, [supabase, loadPostReports, toast]);
 
+  const hasReportedCafe = useCallback(
+    (cafeId: string) => !!meId && cafeReports.some((r) => r.cafeId === cafeId && r.reporterId === meId),
+    [cafeReports, meId],
+  );
+
+  const reportCafe = useCallback(async (cafeId: string, reason: CafeReportReason) => {
+    if (!meId) return false;
+    const { data, error } = await supabase.from('cafe_reports').insert({ cafe_id: cafeId, reporter_id: meId, reason }).select().single();
+    if (error && error.code !== '23505') { console.error(error); toast("Couldn't send your report — please try again."); return false; }
+    setCafeReports((prev) => [
+      { id: data?.id ?? 'tmp-' + uid(), cafeId, reporterId: meId, reason, status: 'pending', createdAt: new Date().toISOString(), cafeName: cafes.find((c) => c.id === cafeId)?.name },
+      ...prev,
+    ]);
+    return true;
+  }, [meId, supabase, cafes, toast]);
+
+  const dismissCafeReports = useCallback((cafeId: string) => {
+    setCafeReports((prev) => prev.map((r) => (r.cafeId === cafeId && r.status === 'pending' ? { ...r, status: 'dismissed' } : r)));
+    supabase.from('cafe_reports').update({ status: 'dismissed' }).eq('cafe_id', cafeId).eq('status', 'pending').then(({ error }: any) => {
+      if (error) { console.error(error); loadCafeReports(); toast("Couldn't dismiss that report — please try again."); }
+    });
+  }, [supabase, loadCafeReports, toast]);
+
+  const hasReportedProfile = useCallback(
+    (userId: string) => !!meId && profileReports.some((r) => r.reportedUserId === userId && r.reporterId === meId),
+    [profileReports, meId],
+  );
+
+  const reportProfile = useCallback(async (userId: string, reason: ProfileReportReason) => {
+    if (!meId || userId === meId) return false;
+    const { data, error } = await supabase.from('profile_reports').insert({ reported_user_id: userId, reporter_id: meId, reason }).select().single();
+    if (error && error.code !== '23505') { console.error(error); toast("Couldn't send your report — please try again."); return false; }
+    setProfileReports((prev) => [
+      { id: data?.id ?? 'tmp-' + uid(), reportedUserId: userId, reporterId: meId, reason, status: 'pending', createdAt: new Date().toISOString() },
+      ...prev,
+    ]);
+    return true;
+  }, [meId, supabase, toast]);
+
+  const dismissProfileReports = useCallback((userId: string) => {
+    setProfileReports((prev) => prev.map((r) => (r.reportedUserId === userId && r.status === 'pending' ? { ...r, status: 'dismissed' } : r)));
+    supabase.from('profile_reports').update({ status: 'dismissed' }).eq('reported_user_id', userId).eq('status', 'pending').then(({ error }: any) => {
+      if (error) { console.error(error); loadProfileReports(); toast("Couldn't dismiss that report — please try again."); }
+    });
+  }, [supabase, loadProfileReports, toast]);
+
   const deleteAccount = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
@@ -1060,12 +1138,25 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     [postReports, profiles],
   );
 
+  const cafeReportsOut = useMemo<CafeReport[]>(
+    () => cafeReports.map((r) => ({ ...r, reporterName: r.reporterId ? profiles.find((p) => p.id === r.reporterId)?.name : undefined })),
+    [cafeReports, profiles],
+  );
+  const profileReportsOut = useMemo<ProfileReport[]>(
+    () => profileReports.map((r) => ({
+      ...r,
+      reporterName: r.reporterId ? profiles.find((p) => p.id === r.reporterId)?.name : undefined,
+      reportedName: profiles.find((p) => p.id === r.reportedUserId)?.name,
+    })),
+    [profileReports, profiles],
+  );
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: profiles, cafes,
-    posts: postsOut, comments: visibleComments, saves: mySaves, lists: myLists,
+    posts: browsablePosts, allPosts: allPostsOut, comments: visibleComments, saves: mySaves, lists: myLists,
     suggestions: suggestionsOut, editSuggestions: editSuggestionsOut, claims: claimsOut,
     notifications: notificationsOut, notes, tagSuggestions: tagSuggestionsOut, follows,
-    conversations, messageReports: reportsOut, postReports: postReportsOut, blockedIds,
+    conversations, messageReports: reportsOut, postReports: postReportsOut, cafeReports: cafeReportsOut, profileReports: profileReportsOut, blockedIds,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, noteForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe, conversationWith, messagesFor, unreadMessageCount, isBlocked,
@@ -1082,6 +1173,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     requestMessage, respondToMessageRequest, sendMessage, markConversationRead, refreshMessages,
     blockUser, unblockUser, reportUser, resolveMessageReport,
     hasReportedPost, reportPost, dismissPostReports, deleteAccount,
+    hasReportedCafe, reportCafe, dismissCafeReports, hasReportedProfile, reportProfile, dismissProfileReports,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

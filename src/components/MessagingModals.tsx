@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useStore } from '@/lib/store';
-import { REPORT_REASONS, POST_REPORT_REASONS, type Profile, type ReportReason, type PostReportReason } from '@/lib/types';
+import { REPORT_REASONS, POST_REPORT_REASONS, CAFE_REPORT_REASONS, PROFILE_REPORT_REASONS, type Profile, type ReportReason } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Modal } from './ui';
 import { Button } from './Button';
@@ -79,22 +79,24 @@ export function ReportUserModal({ user, conversationId, onClose }: { user: Profi
   );
 }
 
-export function ReportPostModal({ postId, onClose }: { postId: string; onClose: () => void }) {
-  const { reportPost } = useStore();
-  const [reason, setReason] = useState<PostReportReason | null>(null);
+/** One-tap "pick a reason" report dialog shared by posts, cafés and profiles. */
+function ReasonReportModal<R extends string>({ title, reasons, onSubmit, onClose }: {
+  title: string; reasons: readonly R[]; onSubmit: (reason: R) => Promise<boolean>; onClose: () => void;
+}) {
+  const [reason, setReason] = useState<R | null>(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
 
   async function submit() {
     if (!reason || busy) return;
     setBusy(true);
-    const ok = await reportPost(postId, reason);
+    const ok = await onSubmit(reason);
     setBusy(false);
     if (ok) setSent(true);
   }
 
   return (
-    <Modal open onClose={onClose} title="Report this post">
+    <Modal open onClose={onClose} title={title}>
       {sent ? (
         <div className="py-4 text-center">
           <p className="font-heading text-base text-racing-700">Thanks for letting us know.</p>
@@ -105,7 +107,7 @@ export function ReportPostModal({ postId, onClose }: { postId: string; onClose: 
         <>
           <p className="mb-3 text-sm text-coffee/70">What&rsquo;s wrong with it?</p>
           <div className="mb-4 flex flex-col gap-1.5">
-            {POST_REPORT_REASONS.map((r) => (
+            {reasons.map((r) => (
               <button
                 key={r}
                 onClick={() => setReason(r)}
@@ -123,4 +125,19 @@ export function ReportPostModal({ postId, onClose }: { postId: string; onClose: 
       )}
     </Modal>
   );
+}
+
+export function ReportPostModal({ postId, onClose }: { postId: string; onClose: () => void }) {
+  const { reportPost } = useStore();
+  return <ReasonReportModal title="Report this post" reasons={POST_REPORT_REASONS} onSubmit={(r) => reportPost(postId, r)} onClose={onClose} />;
+}
+
+export function ReportCafeModal({ cafeId, onClose }: { cafeId: string; onClose: () => void }) {
+  const { reportCafe } = useStore();
+  return <ReasonReportModal title="Report this café" reasons={CAFE_REPORT_REASONS} onSubmit={(r) => reportCafe(cafeId, r)} onClose={onClose} />;
+}
+
+export function ReportProfileModal({ user, onClose }: { user: Profile; onClose: () => void }) {
+  const { reportProfile } = useStore();
+  return <ReasonReportModal title={`Report @${user.username}`} reasons={PROFILE_REPORT_REASONS} onSubmit={(r) => reportProfile(user.id, r)} onClose={onClose} />;
 }

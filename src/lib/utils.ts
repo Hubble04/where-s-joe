@@ -1,4 +1,4 @@
-import type { Cafe, WeekHours, DayHours } from './types';
+import type { Cafe, WeekHours, DayHours, Profile } from './types';
 
 export function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(' ');
@@ -9,6 +9,11 @@ export function monogram(name: string): string {
   const words = (name || 'Joe').replace(/^The\s+/i, '').trim().split(/\s+/);
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
   return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+/** "@username", or "Deleted user" for the stand-in used when someone's account is gone. */
+export function handleOf(u: Profile): string {
+  return u.id ? `@${u.username}` : 'Deleted user';
 }
 
 export function formatDate(iso: string): string {

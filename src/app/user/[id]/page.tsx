@@ -8,13 +8,13 @@ import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { Button } from '@/components/Button';
 import { Modal, SignInPrompt } from '@/components/ui';
 import { useToast } from '@/components/Toast';
-import { BlockUserModal, ReportUserModal } from '@/components/MessagingModals';
+import { BlockUserModal, ReportProfileModal } from '@/components/MessagingModals';
 
 export default function UserPage({ params }: { params: { id: string } }) {
   const { id } = params;
   const router = useRouter();
   const toast = useToast();
-  const { me, ready, users, isFollowing, toggleFollow, conversationWith, requestMessage, isBlocked, unblockUser } = useStore();
+  const { me, ready, users, isFollowing, toggleFollow, conversationWith, requestMessage, isBlocked, unblockUser, hasReportedProfile } = useStore();
   const [authPrompt, setAuthPrompt] = useState(false);
   const [composing, setComposing] = useState(false);
   const [note, setNote] = useState('');
@@ -104,7 +104,9 @@ export default function UserPage({ params }: { params: { id: string } }) {
       {me && (
         <div className="mt-4 flex justify-center gap-4 font-mono text-xs text-coffee/45">
           {!iBlocked && <button onClick={() => setBlocking(true)} className="underline decoration-dotted underline-offset-2">Block</button>}
-          <button onClick={() => setReporting(true)} className="underline decoration-dotted underline-offset-2">Report</button>
+          {hasReportedProfile(user.id)
+            ? <span>Reported</span>
+            : <button onClick={() => setReporting(true)} className="underline decoration-dotted underline-offset-2">Report</button>}
         </div>
       )}
 
@@ -128,7 +130,7 @@ export default function UserPage({ params }: { params: { id: string } }) {
       </Modal>
 
       {blocking && <BlockUserModal user={user} onClose={() => setBlocking(false)} />}
-      {reporting && <ReportUserModal user={user} conversationId={conv?.id} onClose={() => setReporting(false)} />}
+      {reporting && <ReportProfileModal user={user} onClose={() => setReporting(false)} />}
     </div>
   );
 }

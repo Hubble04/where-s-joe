@@ -1,25 +1,29 @@
 'use client';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
-import type { SuggestedCafe, Cafe, CafeEditSuggestion, CafeClaim, CafeTagSuggestion, MessageReport, PostReport } from '@/lib/types';
+import type { SuggestedCafe, Cafe, CafeEditSuggestion, CafeClaim, CafeTagSuggestion, MessageReport, PostReport, CafeReport, ProfileReport } from '@/lib/types';
 import { TAG_CATEGORY, ESTABLISHMENT_TYPES, TAG_TAXONOMY } from '@/lib/brand';
 import { SectionTitle, EmptyState, Chip, SearchBar, Modal } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { timeAgo } from '@/lib/utils';
 
-const TABS = ['Suggestions', 'Edit Reports', 'Claims', 'Tag Suggestions', 'Post Reports', 'User Reports', 'Posts', 'Cafés', 'Users'] as const;
+const TABS = ['Suggestions', 'Edit Reports', 'Claims', 'Tag Suggestions', 'Flagged', 'Posts', 'Cafés', 'Users'] as const;
 type Tab = typeof TABS[number];
+
+const FLAG_FILTERS = ['All', 'Posts', 'Cafés', 'Profiles', 'Chats'] as const;
+type FlagFilter = typeof FLAG_FILTERS[number];
 
 export default function AdminPage() {
   const {
-    me, suggestions, approveSuggestion, rejectSuggestion, posts, deletePost, cafes, users, getUser,
-    editSuggestions, resolveEditSuggestion, claims, tagSuggestions, resolveTagSuggestion, messageReports, postReports,
+    me, suggestions, approveSuggestion, rejectSuggestion, allPosts, deletePost, cafes, users, getUser,
+    editSuggestions, resolveEditSuggestion, claims, tagSuggestions, resolveTagSuggestion, messageReports, postReports, cafeReports, profileReports,
   } = useStore();
   const [tab, setTab] = useState<Tab>('Suggestions');
   const [cafeQuery, setCafeQuery] = useState('');
+  const [flagFilter, setFlagFilter] = useState<FlagFilter>('All');
 
   if (!me || me.role !== 'admin') {
     return (
@@ -50,7 +54,29 @@ export default function AdminPage() {
   const pendingTagSuggestions = tagSuggestions.filter((t) => t.status === 'pending');
   const pendingUserReports = messageReports.filter((r) => r.status === 'pending');
   const pendingPostReports = postReports.filter((r) => r.status === 'pending');
-  const reportedPostIds = Array.from(new Set(pendingPostReports.map((r) => r.postId)));
+  const pendingCafeReports = cafeReports.filter((r) => r.status === 'pending');
+  const pendingProfileReports = profileReports.filter((r) => r.status === 'pending');
+  const unique = (ids: string[]) => Array.from(new Set(ids));
+
+  // One newest-first list for everything people have flagged, one card per post / café / profile.
+  type FlagItem = { key: string; kind: Exclude<FlagFilter, 'All'>; at: string; node: ReactNode };
+  const flagItems: FlagItem[] = [
+    ...unique(pendingPostReports.map((r) => r.postId)).map((id): FlagItem => {
+      const rs = pendingPostReports.filter((r) => r.postId === id);
+      return { key: 'post-' + id, kind: 'Posts', at: rs[0].createdAt, node: <ReportedPostCard postId={id} reports={rs} /> };
+    }),
+    ...unique(pendingCafeReports.map((r) => r.cafeId)).map((id): FlagItem => {
+      const rs = pendingCafeReports.filter((r) => r.cafeId === id);
+      return { key: 'cafe-' + id, kind: 'Cafés', at: rs[0].createdAt, node: <ReportedCafeCard cafeId={id} reports={rs} /> };
+    }),
+    ...unique(pendingProfileReports.map((r) => r.reportedUserId)).map((id): FlagItem => {
+      const rs = pendingProfileReports.filter((r) => r.reportedUserId === id);
+      return { key: 'profile-' + id, kind: 'Profiles', at: rs[0].createdAt, node: <ReportedProfileCard userId={id} reports={rs} /> };
+    }),
+    ...pendingUserReports.map((r): FlagItem => ({ key: 'chat-' + r.id, kind: 'Chats', at: r.createdAt, node: <UserReportCard report={r} /> })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
+  const flagCount = (f: FlagFilter) => (f === 'All' ? flagItems.length : flagItems.filter((i) => i.kind === f).length);
+  const shownFlags = flagFilter === 'All' ? flagItems : flagItems.filter((i) => i.kind === flagFilter);
   const q = cafeQuery.trim().toLowerCase();
   const matchesQuery = (c: Cafe) => !q || [c.name, c.city, c.state, c.neighborhood].join(' ').toLowerCase().includes(q);
   const cafesNeedingReview = cafes.filter((c) => c.status === 'pending' && matchesQuery(c));
@@ -66,8 +92,8 @@ export default function AdminPage() {
         <Stat label="Reports" value={pendingEdits.length} />
         <Stat label="Claims" value={pendingClaims.length} />
         <Stat label="Tags" value={pendingTagSuggestions.length} />
-        <Stat label="Flags" value={pendingUserReports.length} />
-        <Stat label="Posts" value={posts.length} />
+        <Stat label="Flags" value={flagItems.length} />
+        <Stat label="Posts" value={allPosts.length} />
         <Stat label="Cafés" value={cafes.length} />
         <Stat label="Users" value={users.length} />
       </div>
@@ -79,8 +105,7 @@ export default function AdminPage() {
           if (t === 'Edit Reports' && pendingEdits.length) label = `Edit Reports (${pendingEdits.length})`;
           if (t === 'Claims' && pendingClaims.length) label = `Claims (${pendingClaims.length})`;
           if (t === 'Tag Suggestions' && pendingTagSuggestions.length) label = `Tag Suggestions (${pendingTagSuggestions.length})`;
-          if (t === 'Post Reports' && reportedPostIds.length) label = `Post Reports (${reportedPostIds.length})`;
-          if (t === 'User Reports' && pendingUserReports.length) label = `User Reports (${pendingUserReports.length})`;
+          if (t === 'Flagged' && flagItems.length) label = `Flagged (${flagItems.length})`;
           if (t === 'Cafés' && cafesNeedingReview.length) label = `Cafés (${cafesNeedingReview.length})`;
           return <Chip key={t} label={label} active={tab === t} onClick={() => setTab(t)} />;
         })}
@@ -118,28 +143,27 @@ export default function AdminPage() {
         )
       )}
 
-      {tab === 'Post Reports' && (
-        reportedPostIds.length === 0 ? <EmptyState title="Queue is clear" body="No reported posts awaiting review." /> : (
-          <div className="space-y-2">
-            {reportedPostIds.map((id) => (
-              <ReportedPostCard key={id} postId={id} reports={pendingPostReports.filter((r) => r.postId === id)} />
+      {tab === 'Flagged' && (
+        <div>
+          <div className="rail mb-3">
+            {FLAG_FILTERS.map((f) => (
+              <Chip key={f} label={`${f} (${flagCount(f)})`} active={flagFilter === f} onClick={() => setFlagFilter(f)} />
             ))}
           </div>
-        )
-      )}
-
-      {tab === 'User Reports' && (
-        pendingUserReports.length === 0 ? <EmptyState title="Queue is clear" body="No reported users awaiting review." /> : (
-          <div className="space-y-2">
-            {pendingUserReports.map((r) => <UserReportCard key={r.id} report={r} />)}
-          </div>
-        )
+          {shownFlags.length === 0 ? (
+            <EmptyState title="Queue is clear" body={flagFilter === 'All' ? 'Nothing has been flagged for review.' : `No flagged ${flagFilter.toLowerCase()} awaiting review.`} />
+          ) : (
+            <div className="space-y-2">
+              {shownFlags.map((i) => <div key={i.key}>{i.node}</div>)}
+            </div>
+          )}
+        </div>
       )}
 
       {tab === 'Posts' && (
-        posts.length === 0 ? <EmptyState title="No posts" /> : (
+        allPosts.length === 0 ? <EmptyState title="No posts" /> : (
           <div className="space-y-2">
-            {posts.map((p) => {
+            {allPosts.map((p) => {
               const u = getUser(p.userId);
               return (
                 <div key={p.id} className="flex items-center justify-between gap-2 rounded-card bg-ivory p-3 shadow-card">
@@ -372,12 +396,68 @@ function ClaimCard({ claim: c }: { claim: CafeClaim }) {
   );
 }
 
+function FlagLabel({ children }: { children: ReactNode }) {
+  return <p className="mb-1.5 font-mono text-[0.6rem] uppercase tracking-eyebrow text-coffee/45">{children}</p>;
+}
+
+function ReasonList({ reports }: { reports: { id: string; reason: string; reporterName?: string }[] }) {
+  return (
+    <div className="mt-2 space-y-1 rounded-card bg-parchment p-3">
+      {reports.map((r) => (
+        <p key={r.id} className="font-mono text-xs text-coffee/75">
+          <span className="rounded-pill bg-amber/15 px-2 py-0.5 text-[0.65rem] text-amber-dark">{r.reason}</span>{' '}
+          reported by {r.reporterName || 'a member'}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function ReportedCafeCard({ cafeId, reports }: { cafeId: string; reports: CafeReport[] }) {
+  const { dismissCafeReports } = useStore();
+  const first = reports[0];
+  return (
+    <div className="rounded-card bg-ivory p-3 shadow-card">
+      <FlagLabel>Café</FlagLabel>
+      <div className="flex items-start justify-between gap-2">
+        <Link href={`/cafe/${cafeId}`} className="min-w-0 truncate font-display text-lg text-racing-700 hover:underline">{first.cafeName || 'Unknown café'}</Link>
+        <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(first.createdAt)}</span>
+      </div>
+      <ReasonList reports={reports} />
+      <div className="mt-3 flex gap-2">
+        <Link href={`/cafe/${cafeId}`} className="flex flex-1"><Button variant="outline" className="w-full">View café</Button></Link>
+        <Button className="flex-1" onClick={() => dismissCafeReports(cafeId)}>Dismiss</Button>
+      </div>
+    </div>
+  );
+}
+
+function ReportedProfileCard({ userId, reports }: { userId: string; reports: ProfileReport[] }) {
+  const { dismissProfileReports } = useStore();
+  const first = reports[0];
+  return (
+    <div className="rounded-card bg-ivory p-3 shadow-card">
+      <FlagLabel>Profile</FlagLabel>
+      <div className="flex items-start justify-between gap-2">
+        <Link href={`/user/${userId}`} className="min-w-0 truncate font-display text-lg text-racing-700 hover:underline">{first.reportedName || 'Unknown user'}</Link>
+        <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(first.createdAt)}</span>
+      </div>
+      <ReasonList reports={reports} />
+      <div className="mt-3 flex gap-2">
+        <Link href={`/user/${userId}`} className="flex flex-1"><Button variant="outline" className="w-full">View profile</Button></Link>
+        <Button className="flex-1" onClick={() => dismissProfileReports(userId)}>Dismiss</Button>
+      </div>
+    </div>
+  );
+}
+
 function ReportedPostCard({ postId, reports }: { postId: string; reports: PostReport[] }) {
   const { getUser, deletePost, dismissPostReports } = useStore();
   const first = reports[0];
   const author = first.postAuthorId ? getUser(first.postAuthorId) : null;
   return (
     <div className="rounded-card bg-ivory p-3 shadow-card">
+      <FlagLabel>Post</FlagLabel>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm text-coffee/90">{first.postCaption || '(photo only)'}</p>
@@ -389,14 +469,7 @@ function ReportedPostCard({ postId, reports }: { postId: string; reports: PostRe
         </div>
         <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(first.createdAt)}</span>
       </div>
-      <div className="mt-2 space-y-1 rounded-card bg-parchment p-3">
-        {reports.map((r) => (
-          <p key={r.id} className="font-mono text-xs text-coffee/75">
-            <span className="rounded-pill bg-amber/15 px-2 py-0.5 text-[0.65rem] text-amber-dark">{r.reason}</span>{' '}
-            reported by {r.reporterName || 'a member'}
-          </p>
-        ))}
-      </div>
+      <ReasonList reports={reports} />
       <div className="mt-3 flex gap-2">
         <Button variant="danger" className="flex-1" onClick={() => deletePost(postId)}>Remove post</Button>
         <Button variant="outline" className="flex-1" onClick={() => dismissPostReports(postId)}>Dismiss</Button>
@@ -409,6 +482,7 @@ function UserReportCard({ report: r }: { report: MessageReport }) {
   const { resolveMessageReport } = useStore();
   return (
     <div className="rounded-card bg-ivory p-3 shadow-card">
+      <FlagLabel>Chat</FlagLabel>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           {r.reportedUserId ? (

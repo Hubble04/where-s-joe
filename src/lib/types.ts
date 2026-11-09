@@ -227,10 +227,11 @@ export interface CafeTagSuggestion {
   cafeName?: string;
   submitterName?: string;
 }
+/** A null participant/sender means that person deleted their account (shown as "Deleted user"). */
 export interface Conversation {
   id: string;
-  requesterId: string;
-  recipientId: string;
+  requesterId: string | null;
+  recipientId: string | null;
   status: 'pending' | 'accepted' | 'declined';
   createdAt: string;
   updatedAt: string;
@@ -241,7 +242,7 @@ export interface Conversation {
 export interface DirectMessage {
   id: string;
   conversationId: string;
-  senderId: string;
+  senderId: string | null;
   body: string;
   createdAt: string;
 }
@@ -279,3 +280,38 @@ export interface PostReport {
   postAuthorId?: string;
   reporterName?: string;
 }
+
+export const CAFE_REPORT_REASONS = POST_REPORT_REASONS;
+export type CafeReportReason = PostReportReason;
+export const PROFILE_REPORT_REASONS = ['Spam', 'Offensive', 'Impersonation', 'Other'] as const;
+export type ProfileReportReason = typeof PROFILE_REPORT_REASONS[number];
+
+export interface CafeReport {
+  id: string;
+  cafeId: string;
+  reporterId: string | null;
+  reason: string;
+  status: 'pending' | 'dismissed';
+  createdAt: string;
+  // joined
+  cafeName?: string;
+  reporterName?: string;
+}
+
+export interface ProfileReport {
+  id: string;
+  reportedUserId: string;
+  reporterId: string | null;
+  reason: string;
+  status: 'pending' | 'dismissed';
+  createdAt: string;
+  // joined
+  reportedName?: string;
+  reporterName?: string;
+}
+
+/** Stand-in profile shown wherever a deleted person appears (chat history). */
+export const DELETED_USER: Profile = {
+  id: '', name: 'Deleted user', username: 'deleted', bio: '', profilePhotoUrl: '', location: '',
+  role: 'user', createdAt: '',
+};
