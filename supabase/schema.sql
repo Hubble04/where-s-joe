@@ -235,7 +235,7 @@ create index if not exists cafe_claims_status_idx on public.cafe_claims (status)
 create table if not exists public.notifications (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references auth.users (id) on delete cascade,
-  actor_id   uuid references auth.users (id) on delete set null,
+  actor_id   uuid references auth.users (id) on delete cascade,
   type       text not null check (type in (
     'like', 'comment', 'follow', 'suggestion_approved', 'suggestion_rejected',
     'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected',
@@ -256,6 +256,14 @@ alter table public.notifications add constraint notifications_type_check check (
   'edit_resolved', 'claim_approved', 'claim_rejected', 'tag_approved', 'tag_rejected',
     'message_request', 'message_accepted'
 ));
+
+-- When someone deletes their account, the notifications they caused (e.g. "X started
+-- following you") are removed from other people's inboxes too. Every notification is
+-- created with its actor set, so a null actor only ever means a leftover from a deleted account.
+delete from public.notifications where actor_id is null;
+alter table public.notifications drop constraint if exists notifications_actor_id_fkey;
+alter table public.notifications add constraint notifications_actor_id_fkey
+  foreign key (actor_id) references auth.users (id) on delete cascade;
 
 -- ---------------------------------------------------------------------------
 -- push_subscriptions  (one row per browser/device a user has enabled push on)

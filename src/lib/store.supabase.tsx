@@ -618,7 +618,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
       supabase.from('follows').insert({ follower_id: meId, following_id: userId }).then(({ error }: any) => {
         if (error) { console.error(error); loadFollows(); toast("Couldn't follow — please try again."); }
       });
-      notify(userId, 'follow', `${me?.name ?? 'Someone'} started following you`, '/profile', 'notifyFollows');
+      notify(userId, 'follow', `${me?.name ?? 'Someone'} started following you`, `/user/${meId}`, 'notifyFollows');
     }
   }, [meId, follows, supabase, loadFollows, me, notify, toast]);
 

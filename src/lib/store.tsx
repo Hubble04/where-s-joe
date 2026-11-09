@@ -352,7 +352,7 @@ function DemoStoreProvider({ children }: { children: ReactNode }) {
         : [...p.follows, { followerId: me.id, followingId: userId, createdAt: nowISO() }] };
     });
     const alreadyFollowing = s.follows.some((f) => f.followerId === me.id && f.followingId === userId);
-    if (!alreadyFollowing) notify(userId, 'follow', `${me.name} started following you`, '/profile', 'notifyFollows');
+    if (!alreadyFollowing) notify(userId, 'follow', `${me.name} started following you`, `/user/${me.id}`, 'notifyFollows');
   }, [me, s.follows, notify]);
 
   const createPost = useCallback((i: { caption: string; cafeId: string | null; drinkTag: string | null; visibility: Visibility; photos: string[] }) => {
