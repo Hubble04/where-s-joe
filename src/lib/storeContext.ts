@@ -4,7 +4,7 @@ import { createContext, useContext } from 'react';
 import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
-  AppNotification, CafeNote, CafeTagSuggestion, Conversation, DirectMessage, MessageReport, ReportReason,
+  AppNotification, CafeNote, CafeTagSuggestion, Conversation, DirectMessage, MessageReport, ReportReason, PostReport, PostReportReason,
 } from './types';
 
 /**
@@ -32,6 +32,8 @@ export interface StoreValue {
   follows: { followerId: string; followingId: string }[];
   conversations: Conversation[];
   messageReports: MessageReport[];
+  postReports: PostReport[];
+  blockedIds: string[];
 
   getUser: (id: string) => Profile;
   getCafe: (id: string) => Cafe | undefined;
@@ -96,6 +98,10 @@ export interface StoreValue {
   unblockUser: (userId: string) => void;
   reportUser: (userId: string, reason: ReportReason, details: string, conversationId?: string) => Promise<boolean>;
   resolveMessageReport: (id: string) => void;
+  hasReportedPost: (postId: string) => boolean;
+  reportPost: (postId: string, reason: PostReportReason) => Promise<boolean>;
+  dismissPostReports: (postId: string) => void;
+  deleteAccount: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 export const StoreContext = createContext<StoreValue | null>(null);

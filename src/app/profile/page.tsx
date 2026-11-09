@@ -27,6 +27,8 @@ export default function ProfilePage() {
   const [locationSettings, setLocationSettings] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState(false);
   const [privacySettings, setPrivacySettings] = useState(false);
+  const [blockedList, setBlockedList] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   if (!me) {
     return (
@@ -126,10 +128,14 @@ export default function ProfilePage() {
           <SettingRow label="Edit profile" onClick={() => setEditing(true)} />
           <SettingRow label="Notifications" onClick={() => setNotificationSettings(true)} />
           <SettingRow label="Privacy" onClick={() => setPrivacySettings(true)} />
+          <SettingRow label="Blocked accounts" onClick={() => setBlockedList(true)} />
           <SettingRow label="Location settings" onClick={() => setLocationSettings(true)} />
           <button onClick={() => { signOut(); router.push('/'); }} className="flex w-full items-center justify-between px-4 py-3 text-left">
             <span className="font-mono text-sm text-red-700">Log out</span>
             <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-red-700" strokeWidth={1.6}><path d="M15 12H4m0 0l3-3m-3 3l3 3M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <button onClick={() => setDeleting(true)} className="flex w-full items-center justify-between px-4 py-3 text-left">
+            <span className="font-mono text-sm text-red-700">Delete account</span>
           </button>
         </div>
         {isDemoMode && <p className="mt-3 text-center font-mono text-[0.65rem] text-coffee/45">Demo mode — profile changes are saved in this browser only.</p>}
@@ -139,6 +145,8 @@ export default function ProfilePage() {
       {locationSettings && <LocationSettingsModal onClose={() => setLocationSettings(false)} />}
       {notificationSettings && <NotificationSettingsModal onClose={() => setNotificationSettings(false)} />}
       {privacySettings && <PrivacySettingsModal onClose={() => setPrivacySettings(false)} />}
+      {blockedList && <BlockedAccountsModal onClose={() => setBlockedList(false)} />}
+      {deleting && <DeleteAccountModal onClose={() => setDeleting(false)} />}
       <Modal open={authPrompt} onClose={() => setAuthPrompt(false)} title="Sign in"><SignInPrompt message="Log in to continue." /></Modal>
     </div>
   );
@@ -167,6 +175,72 @@ function SettingRow({ label, hint, onClick }: { label: string; hint?: string; on
       {hint ? <span className="font-mono text-[0.65rem] text-coffee/40">{hint}</span>
         : <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-coffee/40" strokeWidth={1.6}><path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
     </button>
+  );
+}
+
+function BlockedAccountsModal({ onClose }: { onClose: () => void }) {
+  const { blockedIds, getUser, unblockUser } = useStore();
+  return (
+    <Modal open onClose={onClose} title="Blocked accounts">
+      {blockedIds.length === 0 ? (
+        <p className="py-4 text-center font-mono text-xs text-coffee/55">You haven&rsquo;t blocked anyone.</p>
+      ) : (
+        <div className="max-h-80 divide-y divide-racing-100 overflow-y-auto rounded-card border border-racing-100">
+          {blockedIds.map((id) => {
+            const u = getUser(id);
+            return (
+              <div key={id} className="flex items-center gap-3 px-3 py-2.5">
+                <ImageWithFallback src={u.profilePhotoUrl} alt={u.name} seed={u.name} className="h-9 w-9 shrink-0 rounded-full" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-mono text-sm text-racing-700">@{u.username}</span>
+                  <span className="block truncate font-mono text-[0.65rem] text-coffee/50">{u.name}</span>
+                </span>
+                <Button size="sm" variant="outline" onClick={() => unblockUser(id)}>Unblock</Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="mt-3 font-mono text-[0.65rem] text-coffee/45">Unblocking brings their posts and comments back.</p>
+    </Modal>
+  );
+}
+
+function DeleteAccountModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const { deleteAccount } = useStore();
+  const [confirmText, setConfirmText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function confirmDelete() {
+    setBusy(true);
+    setError('');
+    const res = await deleteAccount();
+    setBusy(false);
+    if (!res.ok) { setError(res.error ?? 'Something went wrong — please try again.'); return; }
+    router.push('/');
+  }
+
+  return (
+    <Modal open onClose={busy ? () => {} : onClose} title="Delete your account?">
+      <p className="mb-2 text-sm text-coffee/80">
+        This is <span className="text-red-700">permanent and can&rsquo;t be undone.</span> Your profile, posts, comments, saved cafés, lists, follows, suggestions, and messages will be deleted for good, and you&rsquo;ll be logged out.
+      </p>
+      <label className="mb-1 mt-4 block font-mono text-xs text-coffee/60">Type DELETE to confirm</label>
+      <input
+        value={confirmText} onChange={(e) => setConfirmText(e.target.value)}
+        autoCapitalize="characters" autoComplete="off"
+        className="mb-3 w-full rounded-xl border border-racing-100 bg-ivory px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-red-700"
+      />
+      {error && <p className="mb-3 font-mono text-xs text-red-700">{error}</p>}
+      <div className="flex gap-2">
+        <Button variant="ghost" className="flex-1" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="danger" className="flex-1" disabled={confirmText !== 'DELETE' || busy} onClick={confirmDelete}>
+          {busy ? 'Deleting…' : 'Delete forever'}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

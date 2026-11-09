@@ -3,20 +3,20 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { isDemoMode } from '@/lib/env';
-import type { SuggestedCafe, Cafe, CafeEditSuggestion, CafeClaim, CafeTagSuggestion, MessageReport } from '@/lib/types';
+import type { SuggestedCafe, Cafe, CafeEditSuggestion, CafeClaim, CafeTagSuggestion, MessageReport, PostReport } from '@/lib/types';
 import { TAG_CATEGORY, ESTABLISHMENT_TYPES, TAG_TAXONOMY } from '@/lib/brand';
 import { SectionTitle, EmptyState, Chip, SearchBar, Modal } from '@/components/ui';
 import { Button } from '@/components/Button';
 import { ImageWithFallback } from '@/components/ImageWithFallback';
 import { timeAgo } from '@/lib/utils';
 
-const TABS = ['Suggestions', 'Edit Reports', 'Claims', 'Tag Suggestions', 'User Reports', 'Posts', 'Cafés', 'Users'] as const;
+const TABS = ['Suggestions', 'Edit Reports', 'Claims', 'Tag Suggestions', 'Post Reports', 'User Reports', 'Posts', 'Cafés', 'Users'] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminPage() {
   const {
     me, suggestions, approveSuggestion, rejectSuggestion, posts, deletePost, cafes, users, getUser,
-    editSuggestions, resolveEditSuggestion, claims, tagSuggestions, resolveTagSuggestion, messageReports,
+    editSuggestions, resolveEditSuggestion, claims, tagSuggestions, resolveTagSuggestion, messageReports, postReports,
   } = useStore();
   const [tab, setTab] = useState<Tab>('Suggestions');
   const [cafeQuery, setCafeQuery] = useState('');
@@ -49,6 +49,8 @@ export default function AdminPage() {
   const pendingClaims = claims.filter((c) => c.status === 'pending');
   const pendingTagSuggestions = tagSuggestions.filter((t) => t.status === 'pending');
   const pendingUserReports = messageReports.filter((r) => r.status === 'pending');
+  const pendingPostReports = postReports.filter((r) => r.status === 'pending');
+  const reportedPostIds = Array.from(new Set(pendingPostReports.map((r) => r.postId)));
   const q = cafeQuery.trim().toLowerCase();
   const matchesQuery = (c: Cafe) => !q || [c.name, c.city, c.state, c.neighborhood].join(' ').toLowerCase().includes(q);
   const cafesNeedingReview = cafes.filter((c) => c.status === 'pending' && matchesQuery(c));
@@ -77,6 +79,7 @@ export default function AdminPage() {
           if (t === 'Edit Reports' && pendingEdits.length) label = `Edit Reports (${pendingEdits.length})`;
           if (t === 'Claims' && pendingClaims.length) label = `Claims (${pendingClaims.length})`;
           if (t === 'Tag Suggestions' && pendingTagSuggestions.length) label = `Tag Suggestions (${pendingTagSuggestions.length})`;
+          if (t === 'Post Reports' && reportedPostIds.length) label = `Post Reports (${reportedPostIds.length})`;
           if (t === 'User Reports' && pendingUserReports.length) label = `User Reports (${pendingUserReports.length})`;
           if (t === 'Cafés' && cafesNeedingReview.length) label = `Cafés (${cafesNeedingReview.length})`;
           return <Chip key={t} label={label} active={tab === t} onClick={() => setTab(t)} />;
@@ -111,6 +114,16 @@ export default function AdminPage() {
         pendingTagSuggestions.length === 0 ? <EmptyState title="Queue is clear" body="No vibe/amenity tag suggestions awaiting review." /> : (
           <div className="space-y-2">
             {pendingTagSuggestions.map((t) => <TagSuggestionCard key={t.id} suggestion={t} />)}
+          </div>
+        )
+      )}
+
+      {tab === 'Post Reports' && (
+        reportedPostIds.length === 0 ? <EmptyState title="Queue is clear" body="No reported posts awaiting review." /> : (
+          <div className="space-y-2">
+            {reportedPostIds.map((id) => (
+              <ReportedPostCard key={id} postId={id} reports={pendingPostReports.filter((r) => r.postId === id)} />
+            ))}
           </div>
         )
       )}
@@ -354,6 +367,39 @@ function ClaimCard({ claim: c }: { claim: CafeClaim }) {
           Approve &amp; Verify
         </Button>
         <Button variant="danger" className="flex-1" onClick={() => setClaimStatus(c.id, 'rejected')}>Reject</Button>
+      </div>
+    </div>
+  );
+}
+
+function ReportedPostCard({ postId, reports }: { postId: string; reports: PostReport[] }) {
+  const { getUser, deletePost, dismissPostReports } = useStore();
+  const first = reports[0];
+  const author = first.postAuthorId ? getUser(first.postAuthorId) : null;
+  return (
+    <div className="rounded-card bg-ivory p-3 shadow-card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm text-coffee/90">{first.postCaption || '(photo only)'}</p>
+          {author && (
+            <Link href={`/user/${author.id}`} className="mt-0.5 block truncate font-mono text-[0.65rem] text-racing-600 hover:underline">
+              Posted by @{author.username}
+            </Link>
+          )}
+        </div>
+        <span className="shrink-0 font-mono text-[0.65rem] text-coffee/40">{timeAgo(first.createdAt)}</span>
+      </div>
+      <div className="mt-2 space-y-1 rounded-card bg-parchment p-3">
+        {reports.map((r) => (
+          <p key={r.id} className="font-mono text-xs text-coffee/75">
+            <span className="rounded-pill bg-amber/15 px-2 py-0.5 text-[0.65rem] text-amber-dark">{r.reason}</span>{' '}
+            reported by {r.reporterName || 'a member'}
+          </p>
+        ))}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Button variant="danger" className="flex-1" onClick={() => deletePost(postId)}>Remove post</Button>
+        <Button variant="outline" className="flex-1" onClick={() => dismissPostReports(postId)}>Dismiss</Button>
       </div>
     </div>
   );

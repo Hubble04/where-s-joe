@@ -263,3 +263,19 @@ export interface MessageReport {
   reporterName?: string;
   reportedName?: string;
 }
+
+export const POST_REPORT_REASONS = ['Spam', 'Offensive', 'Wrong info', 'Other'] as const;
+export type PostReportReason = typeof POST_REPORT_REASONS[number];
+
+export interface PostReport {
+  id: string;
+  postId: string;
+  reporterId: string | null;
+  reason: string;
+  status: 'pending' | 'dismissed';
+  createdAt: string;
+  // joined
+  postCaption?: string;
+  postAuthorId?: string;
+  reporterName?: string;
+}

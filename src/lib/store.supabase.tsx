@@ -8,7 +8,7 @@ import type {
   Profile, Cafe, Post, Comment, CafeSave, CustomList, SuggestedCafe,
   SaveType, Visibility, WeekHours, CafeEditSuggestion, EditReason, CafeClaim, ClaimRole,
   AppNotification, NotificationType, CafeNote, CafeTagSuggestion,
-  Conversation, DirectMessage, MessageReport, ReportReason,
+  Conversation, DirectMessage, MessageReport, ReportReason, PostReport, PostReportReason,
 } from './types';
 import { getSupabaseBrowser } from './supabase/client';
 import { StoreContext, type StoreValue } from './storeContext';
@@ -134,6 +134,13 @@ function rowToReport(r: any): MessageReport {
   };
 }
 
+function rowToPostReport(r: any): PostReport {
+  return {
+    id: r.id, postId: r.post_id, reporterId: r.reporter_id, reason: r.reason, status: r.status, createdAt: r.created_at,
+    postCaption: r.posts?.caption ?? undefined, postAuthorId: r.posts?.user_id ?? undefined,
+  };
+}
+
 /** The messaging database functions raise readable messages; anything else becomes a generic one. */
 function dmError(message: string | undefined): string {
   const known = /^(You can|This conversation|A conversation|Message must|User not found|Request not found|Not signed in|Conversation not found)/;
@@ -172,6 +179,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const [dms, setDms] = useState<DirectMessage[]>([]);
   const [blockedIds, setBlockedIds] = useState<string[]>([]);
   const [reports, setReports] = useState<MessageReport[]>([]);
+  const [postReports, setPostReports] = useState<PostReport[]>([]);
 
   // --- loaders ---------------------------------------------------------
   const loadProfiles = useCallback(async () => {
@@ -304,6 +312,12 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     setReports((data ?? []).map(rowToReport));
   }, [supabase]);
 
+  const loadPostReports = useCallback(async () => {
+    const { data, error } = await supabase.from('post_reports').select('*, posts(caption, user_id)').order('created_at', { ascending: false });
+    if (error) { console.error(error); return; }
+    setPostReports((data ?? []).map(rowToPostReport));
+  }, [supabase]);
+
   // --- auth session ------------------------------------------------------
   useEffect(() => {
     let alive = true;
@@ -332,6 +346,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
         meId ? loadMessaging() : Promise.resolve(setConversations([])),
         meId ? loadBlocks() : Promise.resolve(setBlockedIds([])),
         loadReports(),
+        meId ? loadPostReports() : Promise.resolve(setPostReports([])),
       ]);
       if (alive) { setReady(true); everReady.current = true; }
     })();
@@ -350,20 +365,22 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   // --- derived / computed -------------------------------------------------
   const me = useMemo(() => (meId ? profiles.find((p) => p.id === meId) ?? null : null), [meId, profiles]);
 
+  const visibleComments = useMemo(() => comments.filter((c) => !blockedIds.includes(c.userId)), [comments, blockedIds]);
+
   const postsOut = useMemo<Post[]>(() => {
     const cafeById = new Map(cafes.map((c) => [c.id, c] as const));
     const likeCountMap = new Map<string, number>();
     likeRows.forEach((l) => likeCountMap.set(l.postId, (likeCountMap.get(l.postId) ?? 0) + 1));
     const commentCountMap = new Map<string, number>();
-    comments.forEach((c) => commentCountMap.set(c.postId, (commentCountMap.get(c.postId) ?? 0) + 1));
-    return posts.map((p) => ({
+    visibleComments.forEach((c) => commentCountMap.set(c.postId, (commentCountMap.get(c.postId) ?? 0) + 1));
+    return posts.filter((p) => !blockedIds.includes(p.userId)).map((p) => ({
       ...p,
       cafeName: p.cafeId ? cafeById.get(p.cafeId)?.name : undefined,
       likeCount: likeCountMap.get(p.id) ?? 0,
       commentCount: commentCountMap.get(p.id) ?? 0,
       likedByMe: !!meId && likeRows.some((l) => l.postId === p.id && l.userId === meId),
     }));
-  }, [posts, cafes, likeRows, comments, meId]);
+  }, [posts, cafes, likeRows, visibleComments, blockedIds, meId]);
 
   const suggestionsOut = useMemo<SuggestedCafe[]>(
     () => suggestions.map((s) => ({ ...s, submitterName: profiles.find((p) => p.id === s.submittedBy)?.name })),
@@ -408,8 +425,8 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
   const isLiked = useCallback((postId: string) => !!meId && likeRows.some((l) => l.postId === postId && l.userId === meId), [likeRows, meId]);
   const likeCount = useCallback((postId: string) => likeRows.filter((l) => l.postId === postId).length, [likeRows]);
   const commentsFor = useCallback(
-    (postId: string) => comments.filter((c) => c.postId === postId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    [comments],
+    (postId: string) => visibleComments.filter((c) => c.postId === postId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [visibleComments],
   );
   const isFollowing = useCallback(
     (userId: string) => !!meId && follows.some((f) => f.followerId === meId && f.followingId === userId),
@@ -745,6 +762,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
 
   const deletePost = useCallback((id: string) => {
     setPosts((prev) => prev.filter((p) => p.id !== id));
+    setPostReports((prev) => prev.filter((r) => r.postId !== id));
     supabase.from('posts').delete().eq('id', id).then(({ error }: any) => {
       if (error) { console.error(error); loadPosts(); toast("Couldn't delete that post — please try again."); }
     });
@@ -996,12 +1014,58 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     [reports, profiles],
   );
 
+  // --- post reports & account deletion ----------------------------------------
+  const hasReportedPost = useCallback(
+    (postId: string) => !!meId && postReports.some((r) => r.postId === postId && r.reporterId === meId),
+    [postReports, meId],
+  );
+
+  const reportPost = useCallback(async (postId: string, reason: PostReportReason) => {
+    if (!meId) return false;
+    const { data, error } = await supabase.from('post_reports').insert({ post_id: postId, reporter_id: meId, reason }).select().single();
+    // 23505 = already reported by this person: treat as done.
+    if (error && error.code !== '23505') { console.error(error); toast("Couldn't send your report — please try again."); return false; }
+    setPostReports((prev) => [
+      { id: data?.id ?? 'tmp-' + uid(), postId, reporterId: meId, reason, status: 'pending', createdAt: new Date().toISOString() },
+      ...prev,
+    ]);
+    return true;
+  }, [meId, supabase, toast]);
+
+  const dismissPostReports = useCallback((postId: string) => {
+    setPostReports((prev) => prev.map((r) => (r.postId === postId && r.status === 'pending' ? { ...r, status: 'dismissed' } : r)));
+    supabase.from('post_reports').update({ status: 'dismissed' }).eq('post_id', postId).eq('status', 'pending').then(({ error }: any) => {
+      if (error) { console.error(error); loadPostReports(); toast("Couldn't dismiss that report — please try again."); }
+    });
+  }, [supabase, loadPostReports, toast]);
+
+  const deleteAccount = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return { ok: false, error: 'Not signed in.' };
+    let res: Response;
+    try {
+      res = await fetch('/api/delete-account', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    } catch {
+      return { ok: false, error: "Couldn't reach the server — check your connection and try again." };
+    }
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) return { ok: false, error: json.error ?? 'Something went wrong — please try again.' };
+    await supabase.auth.signOut({ scope: 'local' });
+    return { ok: true };
+  }, [supabase]);
+
+  const postReportsOut = useMemo<PostReport[]>(
+    () => postReports.map((r) => ({ ...r, reporterName: r.reporterId ? profiles.find((p) => p.id === r.reporterId)?.name : undefined })),
+    [postReports, profiles],
+  );
+
   const value: StoreValue = {
     ready, me, isAuthed: !!me, users: profiles, cafes,
-    posts: postsOut, comments, saves: mySaves, lists: myLists,
+    posts: postsOut, comments: visibleComments, saves: mySaves, lists: myLists,
     suggestions: suggestionsOut, editSuggestions: editSuggestionsOut, claims: claimsOut,
     notifications: notificationsOut, notes, tagSuggestions: tagSuggestionsOut, follows,
-    conversations, messageReports: reportsOut,
+    conversations, messageReports: reportsOut, postReports: postReportsOut, blockedIds,
     getUser, getCafe, isLiked, likeCount, commentsFor, isFollowing,
     savesForCafe, noteForCafe, hasSave, savesByType, listsForMe, myPosts, mySuggestions,
     feedPosts, postsForCafe, conversationWith, messagesFor, unreadMessageCount, isBlocked,
@@ -1017,6 +1081,7 @@ export function SupabaseStoreProvider({ children }: { children: ReactNode }) {
     toggleCafeTag, suggestCafeTag, resolveTagSuggestion,
     requestMessage, respondToMessageRequest, sendMessage, markConversationRead, refreshMessages,
     blockUser, unblockUser, reportUser, resolveMessageReport,
+    hasReportedPost, reportPost, dismissPostReports, deleteAccount,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

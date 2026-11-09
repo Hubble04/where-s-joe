@@ -5,20 +5,26 @@ import type { Post } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { cn, timeAgo } from '@/lib/utils';
 import { ImageWithFallback } from './ImageWithFallback';
+import { Modal } from './ui';
+import { BlockUserModal, ReportPostModal } from './MessagingModals';
 
 export function PostCard({ post, onNeedAuth }: { post: Post; onNeedAuth: () => void }) {
-  const { me, getUser, getCafe, isLiked, likeCount, commentsFor, toggleLike, addComment, hasSave, toggleSave, isFollowing, toggleFollow } = useStore();
+  const { me, getUser, getCafe, isLiked, likeCount, commentsFor, toggleLike, addComment, hasSave, toggleSave, isFollowing, toggleFollow, hasReportedPost } = useStore();
   const author = getUser(post.userId);
   const cafe = post.cafeId ? getCafe(post.cafeId) : undefined;
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [photoIdx, setPhotoIdx] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [blocking, setBlocking] = useState(false);
   const liked = isLiked(post.id);
   const comments = commentsFor(post.id);
 
   const guard = (fn: () => void) => () => (me ? fn() : onNeedAuth());
 
   return (
+    <>
     <article className="overflow-hidden rounded-card bg-ivory shadow-card animate-fade-up">
       <div className="flex items-center gap-3 px-4 py-3">
         <Link href={`/user/${author.id}`} aria-label={`View @${author.username}`} className="shrink-0">
@@ -45,6 +51,15 @@ export function PostCard({ post, onNeedAuth }: { post: Post; onNeedAuth: () => v
           </button>
         )}
         <span className="shrink-0 font-mono text-xs text-coffee/40">{timeAgo(post.createdAt)}</span>
+        {(!me || me.id !== author.id) && (
+          <button
+            onClick={() => (me ? setMenuOpen(true) : onNeedAuth())}
+            aria-label="More options"
+            className="-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-coffee/50 hover:bg-parchment"
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+          </button>
+        )}
       </div>
 
       {post.photos.length > 0 && (
@@ -122,6 +137,27 @@ export function PostCard({ post, onNeedAuth }: { post: Post; onNeedAuth: () => v
           </div>
         </div>
       )}
+
     </article>
+      <Modal open={menuOpen} onClose={() => setMenuOpen(false)} title={`@${author.username}'s post`}>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => { setMenuOpen(false); setReporting(true); }}
+            disabled={hasReportedPost(post.id)}
+            className="rounded-pill border border-racing-200 px-4 py-2.5 text-center font-mono text-sm text-racing-700 transition-colors hover:bg-racing-50 disabled:opacity-50"
+          >
+            {hasReportedPost(post.id) ? 'You reported this post' : 'Report post'}
+          </button>
+          <button
+            onClick={() => { setMenuOpen(false); setBlocking(true); }}
+            className="rounded-pill border border-red-700/30 px-4 py-2.5 text-center font-mono text-sm text-red-700 transition-colors hover:bg-red-50"
+          >
+            Block @{author.username}
+          </button>
+        </div>
+      </Modal>
+      {reporting && <ReportPostModal postId={post.id} onClose={() => setReporting(false)} />}
+      {blocking && <BlockUserModal user={author} onClose={() => setBlocking(false)} />}
+    </>
   );
 }
